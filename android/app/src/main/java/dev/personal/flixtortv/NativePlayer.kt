@@ -3,6 +3,7 @@ package dev.personal.flixtortv
 import android.app.Activity
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.SurfaceView
 import android.widget.FrameLayout
 import androidx.media3.common.*
@@ -13,6 +14,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionResult
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.SubtitleView
 import com.google.common.util.concurrent.Futures
 import org.json.JSONArray
@@ -20,6 +22,9 @@ import org.json.JSONObject
 
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class NativePlayer(private val activity: Activity, root: FrameLayout, private val emit: (JSONObject) -> Unit) {
+    private val videoFrame = AspectRatioFrameLayout(activity).apply {
+        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+    }
     private val surface = SurfaceView(activity)
     private val subtitles = SubtitleView(activity)
     private var player: ExoPlayer? = null
@@ -32,7 +37,11 @@ internal class NativePlayer(private val activity: Activity, root: FrameLayout, p
     private val tick = object : Runnable {
         override fun run() { player?.let { emit(snapshot(it)) }; handler.postDelayed(this, 250) }
     }
-    init { root.addView(surface, FrameLayout.LayoutParams(-1, -1)); handler.post(tick) }
+    init {
+        videoFrame.addView(surface, FrameLayout.LayoutParams(-1, -1))
+        root.addView(videoFrame, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+        handler.post(tick)
+    }
     fun attachSubtitles(root: FrameLayout) {
         (subtitles.parent as? android.view.ViewGroup)?.removeView(subtitles)
         root.addView(subtitles, FrameLayout.LayoutParams(-1, -1))
@@ -65,6 +74,20 @@ internal class NativePlayer(private val activity: Activity, root: FrameLayout, p
         }
         p.addListener(object : Player.Listener {
             override fun onCues(group: androidx.media3.common.text.CueGroup) { if (player === p) subtitles.setCues(group.cues) }
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (player !== p) return
+                val width = videoSize.width
+                val height = videoSize.height
+                if (width <= 0 || height <= 0) {
+                    videoFrame.setAspectRatio(0f)
+                    return
+                }
+                var aspectRatio = width * videoSize.pixelWidthHeightRatio / height
+                if (videoSize.unappliedRotationDegrees == 90 || videoSize.unappliedRotationDegrees == 270) {
+                    aspectRatio = 1f / aspectRatio
+                }
+                videoFrame.setAspectRatio(aspectRatio)
+            }
             override fun onPlayerError(error: PlaybackException) {
                 if (player === p) emit(snapshot(p).put("error", error.errorCodeName))
             }
