@@ -10,4 +10,4 @@ Anime has a dedicated catalogue and search through the built-in HiAnime adapter.
 
 The visual system is Liquid Cinema: full-bleed artwork stages, floating translucent navigation and actions, dense task surfaces, bright-art scrims, and distinct focus/selection/pending states. It uses bundled Roboto and the SolidTV canvas renderer on a 1920 × 1080 logical scene. Layouts scale to TV output and respect adjustable screen-fit margins. Reduced motion and reduced-transparency variants are supported.
 
-Personal source and signed release distribution: DylanL0ng/flixtor-tv on GitHub. Updates download automatically and install in place through Android's installer. Structural-error reports are user-triggered and delivered through a dedicated Vercel/Resend relay; unavailable deployment configuration must stay visible.
+Personal source and signed release distribution: FancyFlush/flixtor-tv on GitHub. Updates download automatically and install in place through Android's installer. Structural-error reports are user-triggered and delivered through a dedicated Vercel/Resend relay; unavailable deployment configuration must stay visible.

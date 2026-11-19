@@ -1,5 +1,6 @@
 name: Android
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     tags: ['v*']
@@ -27,7 +28,15 @@ jobs:
       - run: npm run typecheck && npm test && npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - run: ./android/gradlew -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console=plain
+      - name: Unit tests, lint and debug APK
+        env:
+          TV_TMDB_TOKEN: ${{ secrets.TV_TMDB_TOKEN }}
+        run: ./android/gradlew -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flixtor-tv-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
       - name: Enable KVM hardware acceleration for Android Emulator
         run: |
           if [ -c /dev/kvm ]; then
@@ -73,6 +82,7 @@ jobs:
           TV_COMMIT_SHA: ${{ github.sha }}
           TV_REPORT_URL: ${{ vars.TV_REPORT_URL }}
           TV_TMDB_TOKEN: ${{ secrets.TV_TMDB_TOKEN }}
+          TV_INTRODB_API_KEY: ${{ secrets.TV_INTRODB_API_KEY }}
         run: python3 tools/ci_release.py
       - name: Publish stable APK and metadata
         env:

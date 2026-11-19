@@ -17,7 +17,7 @@ internal class NativeInstaller(private val activity: Activity, private val emit:
     private var metadata: JSONObject? = null
     @Synchronized fun prepare(release: JSONObject): JSONObject {
         val url = release.getString("apkUrl")
-        require(url.startsWith("https://github.com/DylanL0ng/flixtor-tv/releases/download/") && url.endsWith("/app-release.apk"))
+        require(url.startsWith("https://github.com/FancyFlush/flixtor-tv/releases/download/") && url.endsWith("/app-release.apk"))
         require(release.getString("sha256").matches(Regex("[a-fA-F0-9]{64}")))
         val temp = File(activity.cacheDir, "solidtv-update.part")
         try {

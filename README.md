@@ -16,9 +16,12 @@ Targets ONN **Android/Google TV** devices and Chromecast **with Google TV** on A
 
 Install JDK 17 and Android SDK platform/build-tools 34. Create untracked `local.properties` containing `sdk.dir=/absolute/path/to/Android/Sdk`.
 
+Run `npm ci` once in the repository root first: every Android build runs `npm run build` to bundle the web app, and fails with a missing-vite error if node_modules is absent. Run Gradle from the `android/` folder (`cd android`). The Gradle web-build task calls `npm` directly, so build on macOS or Linux.
+
 ```sh
+cd android
 ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
-python3 tools/build_release.py
+python3 ../tools/build_release.py
 ```
 
 Set `JAVA_HOME` to JDK 17 if your default Java differs. The release helper creates a private signing key and config in `~/.local/share/flixtor-tv/`. Keep a secure backup: updates need the same key. Signing keys and passwords never belong in Git. Advanced builds can supply `TV_KEYSTORE`, `TV_STORE_PASSWORD`, `TV_KEY_ALIAS`, and `TV_KEY_PASSWORD` directly to Gradle.
@@ -42,7 +45,7 @@ The built-in native adapter resolves streams afresh and uses source-specific med
 
 ## Install and update
 
-Download the signed APK from [GitHub Releases](https://github.com/DylanL0ng/flixtor-tv/releases). Existing installations need one manual signed upgrade to introduce the updater. Subsequent stable releases are checked on launch, every six hours while the app runs, manually from Settings, and after structural failures. Downloads verify checksum, package ID, increasing version code, compatible Android version, and the installed signing certificate. Updates install in place after leaving playback; Android may require allowing this app to install packages and confirming installation. Cancellation keeps the current app and data.
+Download the signed APK from [GitHub Releases](https://github.com/FancyFlush/flixtor-tv/releases). Existing installations need one manual signed upgrade to introduce the updater. Subsequent stable releases are checked on launch, every six hours while the app runs, manually from Settings, and after structural failures. Downloads verify checksum, package ID, increasing version code, compatible Android version, and the installed signing certificate. Updates install in place after leaving playback; Android may require allowing this app to install packages and confirming installation. Cancellation keeps the current app and data.
 
 Enable developer options and debugging on your own TV. Use its displayed debugging/pairing settings; exact screens vary by device and Android version. For wireless debugging use `adb pair IP:PAIRING_PORT` and then `adb connect IP:DEBUG_PORT`. Install with:
 
@@ -51,6 +54,8 @@ adb -s DEVICE_SERIAL install -r app/build/outputs/apk/release/app-release.apk
 ```
 
 Open **FlixTor TV · Personal** from the TV launcher. Debug and personal-release keys differ: switching from debug to release requires uninstalling the debug build and removes its local data. Release updates reuse the personal key and preserve data.
+
+The in-app updater and tools/install_tv.sh read GitHub Releases. If this repository is private, the in-app updater cannot download releases (it makes unauthenticated requests) and will show 'Update status unavailable'; install builds over adb instead, or use tools/install_tv.sh, which authenticates through the GitHub CLI.
 
 ## Account and playback
 
@@ -102,7 +107,7 @@ Access errors distinguish required sign-in, expired sessions, VIP restrictions, 
 
 ## Releases and problem reports
 
-GitHub Actions verifies unit tests, lint, debug builds, and notification tests. Stable `vMAJOR.MINOR.PATCH` tags build using the existing release key and publish `app-release.apk` plus `release.json`. CI version codes are `1000 + GITHUB_RUN_NUMBER`; commit SHA is embedded in the APK. Configure repository secrets `TV_KEYSTORE_BASE64`, `TV_STORE_PASSWORD`, `TV_KEY_PASSWORD`, `TV_KEY_ALIAS`, and optionally `TV_INTRODB_API_KEY` to enable contributing skip timestamps from release builds. Keys never belong in the source tree. Keep the original private key backed up.
+GitHub Actions verifies unit tests, lint, debug builds, and notification tests. Stable `vMAJOR.MINOR.PATCH` tags build using the existing release key and publish `app-release.apk` plus `release.json`. CI version codes are `1000 + GITHUB_RUN_NUMBER`; commit SHA is embedded in the APK. Configure repository secrets `TV_KEYSTORE_BASE64`, `TV_STORE_PASSWORD`, `TV_KEY_PASSWORD`, `TV_KEY_ALIAS`, `TV_TMDB_TOKEN`, and optionally `TV_INTRODB_API_KEY` to enable contributing skip timestamps from release builds. Keys never belong in the source tree. Keep the original private key backed up.
 
 A push to `main` verifies source but does not publish an APK. After verification, push an increasing stable version tag to run the release job. The updater installs published stable releases, not unreleased commits. A downloaded update is announced outside playback even when Android installation permission still needs to be enabled; Later keeps it available in Settings.
 

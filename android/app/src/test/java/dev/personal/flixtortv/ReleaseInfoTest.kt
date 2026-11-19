@@ -6,7 +6,7 @@ import org.junit.Test
 
 class ReleaseInfoTest {
     private fun metadata() = JSONObject().put("versionCode", 3).put("versionName", "0.3.0").put("minSdk", 29)
-        .put("sha256", "a".repeat(64)).put("apkUrl", "https://github.com/DylanL0ng/flixtor-tv/releases/download/v0.3.0/app-release.apk")
+        .put("sha256", "a".repeat(64)).put("apkUrl", "https://github.com/FancyFlush/flixtor-tv/releases/download/v0.3.0/app-release.apk")
     @Test fun validReleaseIsAccepted() { assertEquals(3, ReleaseInfo.parse(metadata()).versionCode) }
     @Test fun unsafeReleaseMetadataIsRejected() {
         for (json in listOf(metadata().put("apkUrl", "https://evil.example/a.apk"), metadata().put("sha256", "bad"),

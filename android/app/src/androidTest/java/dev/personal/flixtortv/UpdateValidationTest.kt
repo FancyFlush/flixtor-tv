@@ -23,7 +23,7 @@ class UpdateValidationTest {
             assets.open(name).use { input -> file.outputStream().use { input.copyTo(it) } }
             val sha = MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) }
             val version = context.packageManager.getPackageArchiveInfo(file.path, 0)!!.longVersionCode.toInt()
-            return file to ReleaseInfo(version, "test", 29, sha, "https://github.com/DylanL0ng/flixtor-tv/releases/download/test/app.apk")
+            return file to ReleaseInfo(version, "test", 29, sha, "https://github.com/FancyFlush/flixtor-tv/releases/download/test/app.apk")
         }
         val correct = candidate("candidate.apk")
         val wrongSigner = candidate("wrong-signer.apk")

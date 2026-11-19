@@ -36,7 +36,7 @@ data class ReleaseInfo(val versionCode: Int, val versionName: String, val minSdk
                 json.getString("sha256"), json.getString("apkUrl"))
             require(release.versionCode > 0 && release.versionName.length in 1..64 && release.minSdk >= 29)
             require(release.sha256.matches(Regex("[a-f0-9]{64}")))
-            require(release.url.startsWith("https://github.com/DylanL0ng/flixtor-tv/releases/download/"))
+            require(release.url.startsWith("https://github.com/FancyFlush/flixtor-tv/releases/download/"))
             return release
         }
     }
@@ -49,7 +49,7 @@ class UpdateService(private val context: Context) {
     private val checkLock = Mutex()
     private val installLock = Mutex()
     private val apk = File(context.cacheDir, "updates/update.apk")
-    private val root = "https://github.com/DylanL0ng/flixtor-tv/releases/latest/download/"
+    private val root = "https://github.com/FancyFlush/flixtor-tv/releases/latest/download/"
     private var readyRelease: ReleaseInfo? = null
     private var reportGeneration = 0
     private val installPrefs = context.getSharedPreferences("update_install", Context.MODE_PRIVATE)
@@ -101,7 +101,7 @@ class UpdateService(private val context: Context) {
             }
             if (fingerprint != null) {
                 try {
-                    val incidents = json("https://raw.githubusercontent.com/DylanL0ng/flixtor-tv/main/incidents.json").getJSONArray("incidents")
+                    val incidents = json("https://raw.githubusercontent.com/FancyFlush/flixtor-tv/main/incidents.json").getJSONArray("incidents")
                     val known = (0 until incidents.length()).any { index ->
                         val incident = incidents.getJSONObject(index)
                         incident.getString("fingerprint") == fingerprint && incident.optString("status") == "pending" &&

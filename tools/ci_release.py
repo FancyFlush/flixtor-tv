@@ -25,5 +25,5 @@ with tempfile.TemporaryDirectory() as private:
 apk = root / "android/app/build/outputs/apk/release/app-release.apk"
 metadata = {"versionCode": version_code, "versionName": version, "minSdk": 29,
             "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "commit": env["GITHUB_SHA"],
-            "apkUrl": f"https://github.com/DylanL0ng/flixtor-tv/releases/download/{tag}/app-release.apk"}
+            "apkUrl": f"https://github.com/FancyFlush/flixtor-tv/releases/download/{tag}/app-release.apk"}
 (root / "release.json").write_text(json.dumps(metadata, indent=2) + "\n")

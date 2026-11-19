@@ -1,7 +1,7 @@
 import { createStore } from 'solid-js/store';
 import type { HostInfo, HttpResponse, Platform } from '../../platform/platform';
 import type { Release } from '../../domain/models';
-const REPO = 'https://api.github.com/repos/DylanL0ng/flixtor-tv/releases/latest';
+const REPO = 'https://api.github.com/repos/FancyFlush/flixtor-tv/releases/latest';
 export function createUpdates(platform: Platform, host: HostInfo) {
   const [state, set] = createStore<{ phase: string; version: string; progress: number; incident?: boolean; report: string; error?: string }>({ phase: 'idle', version: '', progress: 0, report: host.reportUrl ? 'idle' : 'unconfigured' });
   let working = false, generation = 0;
@@ -17,7 +17,7 @@ export function createUpdates(platform: Platform, host: HostInfo) {
       const latest = await json(REPO); const asset = latest.assets?.find((a: { name: string }) => a.name === 'release.json');
       if (!asset || latest.prerelease || latest.draft) throw new Error('No stable release metadata');
       const release = await json(asset.browser_download_url) as Release;
-      if (!Number.isInteger(release.versionCode) || release.versionCode < 1 || !Number.isInteger(release.minSdk) || release.minSdk < 29 || !release.versionName || release.versionName.length > 64 || !/^[a-f\d]{64}$/i.test(release.sha256) || !release.apkUrl?.startsWith('https://github.com/DylanL0ng/flixtor-tv/releases/download/')) throw new Error('Invalid release metadata');
+      if (!Number.isInteger(release.versionCode) || release.versionCode < 1 || !Number.isInteger(release.minSdk) || release.minSdk < 29 || !release.versionName || release.versionName.length > 64 || !/^[a-f\d]{64}$/i.test(release.sha256) || !release.apkUrl?.startsWith('https://github.com/FancyFlush/flixtor-tv/releases/download/')) throw new Error('Invalid release metadata');
       if (request !== generation) return;
       if (release.versionCode > host.versionCode) {
         if (release.minSdk > host.sdk) { set({ phase: 'incompatible', version: release.versionName }); return; }
@@ -27,7 +27,7 @@ export function createUpdates(platform: Platform, host: HostInfo) {
       } else set({ phase: 'current', version: release.versionName });
       if (fingerprint) {
         try {
-          const feed = await json('https://raw.githubusercontent.com/DylanL0ng/flixtor-tv/main/incidents.json');
+          const feed = await json('https://raw.githubusercontent.com/FancyFlush/flixtor-tv/main/incidents.json');
           set('incident', feed.incidents?.some((i: { fingerprint: string; status: string; minVersionCode: number; maxVersionCode: number }) => i.fingerprint === fingerprint && i.status === 'pending' && host.versionCode >= i.minVersionCode && host.versionCode <= i.maxVersionCode) ?? false);
         } catch { set('incident', undefined); }
       }

@@ -1,79 +1,59 @@
 #!/usr/bin/env bash
 #
-# Install the newest GitHub release of the FlixTor TV app onto a local TV.
+# Install the newest GitHub release of FlixTor TV onto a TV over adb.
 #
-# The release is signed with the newest signing key (personal.p12, see
-# ~/.local/share/flixtor-tv/signing.json). Because that key differs from the
-# key that signed the previously installed app, `adb install -r` would fail
-# with a signature mismatch, so the old app is uninstalled first (fresh
-# install; local app data is not preserved).
+# Works with a PRIVATE repository: downloads go through the GitHub CLI (`gh`),
+# so run `gh auth login` once first.
 #
 # Usage:
-#   TV_HOST=192.168.68.59:5555 ./tools/install_tv.sh
-#   ./tools/install_tv.sh 192.168.68.59:5555
+#   ./tools/install_tv.sh 192.168.1.50:5555            # upgrade in place
+#   ./tools/install_tv.sh 192.168.1.50:5555 --reinstall # uninstall first (WIPES app data)
 #
+# Use --reinstall only when a normal install fails with a signature mismatch.
 set -euo pipefail
 
-REPO="DylanL0ng/flixtor-tv"
+REPO="FancyFlush/flixtor-tv"
 PACKAGE="dev.personal.flixtortv"
-ADB="${ADB:-/Users/dylan/Android/Sdk/platform-tools/adb}"
-TV_HOST="${1:-${TV_HOST:-192.168.68.59:5555}}"
-API="https://api.github.com/repos/${REPO}"
 
-have() { command -v "$1" >/dev/null 2>&1; }
+TV_HOST="${1:-${TV_HOST:-}}"
+REINSTALL="no"
+[[ "${2:-}" == "--reinstall" ]] && REINSTALL="yes"
+ADB="${ADB:-$(command -v adb || true)}"
 
-if ! have adb && ! [[ -x "$ADB" ]]; then
-  echo "error: adb not found at $ADB (set ADB env var or install Android platform-tools)" >&2
+if [[ -z "$TV_HOST" ]]; then
+  echo "error: pass the TV address, e.g. ./tools/install_tv.sh 192.168.1.50:5555" >&2
   exit 1
 fi
-if ! have curl && ! have wget; then
-  echo "error: curl or wget required to download the release" >&2
+if [[ -z "$ADB" || ! -x "$ADB" ]]; then
+  echo "error: adb not found. Install Android platform-tools or set ADB=/path/to/adb" >&2
   exit 1
 fi
-
-echo "==> Resolving newest GitHub release for ${REPO} ..."
-if have curl; then
-  LATEST="$(curl -sS --fail --max-time 30 "${API}/releases/latest")"
-else
-  LATEST="$(wget -qO- --timeout=30 "${API}/releases/latest")"
-fi
-
-TAG="$(printf '%s' "$LATEST" | grep -m1 -o '"tag_name": *"[^"]*"' | sed -E 's/.*"tag_name": *"([^"]*)"/\1/')"
-
-if [[ -z "$TAG" ]]; then
-  echo "error: could not parse newest release tag" >&2
+if ! command -v gh >/dev/null 2>&1; then
+  echo "error: GitHub CLI (gh) is required. Install it and run: gh auth login" >&2
   exit 1
 fi
 
-# Stable download URLs derived from the resolved tag (matches the CI release
-# publishing in .github/workflows/android.yml and the release.json asset).
-APK_URL="https://github.com/${REPO}/releases/download/${TAG}/app-release.apk"
-RELEASE_JSON_URL="https://github.com/${REPO}/releases/download/${TAG}/release.json"
-
-echo "==> Newest release: ${TAG}  APK: ${APK_URL}"
+sha256_of() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else sha256sum "$1" | awk '{print $1}'; fi
+}
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+
+echo "==> Downloading newest release of ${REPO} ..."
+TAG="$(gh release view -R "$REPO" --json tagName -q .tagName)"
+gh release download "$TAG" -R "$REPO" -p app-release.apk -p release.json -D "$TMP_DIR"
 APK="${TMP_DIR}/app-release.apk"
 RELEASE_JSON="${TMP_DIR}/release.json"
-
-echo "==> Downloading APK and release metadata ..."
-if have curl; then
-  curl -sS --fail --max-time 300 -L "$APK_URL" -o "$APK"
-  curl -sS --fail --max-time 60 -L "$RELEASE_JSON_URL" -o "$RELEASE_JSON"
-else
-  wget -q --timeout=300 -O "$APK" "$APK_URL"
-  wget -q --timeout=60 -O "$RELEASE_JSON" "$RELEASE_JSON_URL"
-fi
+echo "==> Release: ${TAG}"
 
 EXPECTED_SHA="$(grep -m1 -o '"sha256": *"[^"]*"' "$RELEASE_JSON" | sed -E 's/.*"sha256": *"([^"]*)"/\1/')"
 if [[ -z "$EXPECTED_SHA" ]]; then
   echo "error: release.json has no sha256 field" >&2
   exit 1
 fi
-
-echo "==> Verifying sha256 ${EXPECTED_SHA} ..."
-ACTUAL="$(shasum -a 256 "$APK" | awk '{print $1}')"
+ACTUAL="$(sha256_of "$APK")"
 if [[ "$ACTUAL" != "$EXPECTED_SHA" ]]; then
   echo "error: sha256 mismatch: expected ${EXPECTED_SHA} got ${ACTUAL}" >&2
   exit 1
@@ -83,21 +63,23 @@ echo "==> sha256 OK"
 echo "==> Connecting to TV ${TV_HOST} ..."
 "$ADB" connect "$TV_HOST" >/dev/null 2>&1 || true
 if ! "$ADB" -s "$TV_HOST" get-state >/dev/null 2>&1; then
-  echo "error: TV ${TV_HOST} is not reachable via adb. Is it on the network and is adb debugging enabled?" >&2
+  echo "error: TV ${TV_HOST} is not reachable via adb. Is it on the network with debugging enabled?" >&2
   exit 1
 fi
 
-echo "==> Uninstalling old app ${PACKAGE} (fresh install required due to signing-key rotation) ..."
-"$ADB" -s "$TV_HOST" uninstall "$PACKAGE" >/dev/null 2>&1 && echo "    old app removed" || echo "    no previous install (continuing)"
+if [[ "$REINSTALL" == "yes" ]]; then
+  echo "==> Uninstalling ${PACKAGE} (app data will be lost) ..."
+  "$ADB" -s "$TV_HOST" uninstall "$PACKAGE" >/dev/null 2>&1 && echo "    old app removed" || echo "    no previous install (continuing)"
+fi
 
-echo "==> Installing newest release ..."
-"$ADB" -s "$TV_HOST" install -t -r "$APK" >/dev/null 2>&1 && echo "    installed" || {
-  echo "error: adb install failed" >&2
+echo "==> Installing ${TAG} ..."
+if ! OUTPUT="$("$ADB" -s "$TV_HOST" install -r "$APK" 2>&1)"; then
+  echo "$OUTPUT" >&2
+  echo "error: adb install failed. If the message mentions a signature mismatch, re-run with --reinstall." >&2
   exit 1
-}
+fi
+echo "    installed"
 
-echo "==> Verifying installed version ..."
-"$ADB" -s "$TV_HOST" shell pm dump "$PACKAGE" 2>/dev/null | grep -E "versionCode|versionName" || \
+echo "==> Installed version:"
 "$ADB" -s "$TV_HOST" shell dumpsys package "$PACKAGE" 2>/dev/null | grep -E "versionCode|versionName" || true
-
 echo "==> Done: ${TAG} installed on ${TV_HOST}"
