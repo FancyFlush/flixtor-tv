@@ -44,6 +44,53 @@ export function sortMovies(titles: Movie[], sort: MovieSort) {
   const unique = [...new Map(titles.map(t => [t.tmdbId, t])).values()];
   return unique.sort((a, b) => (sort === 'popular' ? (b.popularity || 0) - (a.popularity || 0) : sort === 'release' ? (b.released || '').localeCompare(a.released || '') : Number(b.rating || 0) - Number(a.rating || 0)) || a.name.localeCompare(b.name));
 }
+// TV types
+export interface Episode {
+  id: number
+  season_number: number
+  episode_number: number
+  name: string
+  overview?: string
+  air_date?: string
+  still_path?: string
+  vote_average?: number
+  vote_count?: number
+  runtime?: number
+}
+
+export interface SeasonDetail {
+  id: number
+  season_number: number
+  name: string
+  overview?: string
+  air_date?: string
+  episodes: Episode[]
+  poster_path?: string
+}
+
+export interface TVDetail {
+  id: number
+  name: string
+  overview?: string
+  first_air_date?: string
+  last_air_date?: string
+  number_of_seasons: number
+  number_of_episodes: number
+  seasons: Array<{ season_number: number; episode_count: number; name?: string; overview?: string; air_date?: string; poster_path?: string }>
+  genres: Array<{ id: number; name: string }>
+  networks: Array<{ id: number; name: string; logo_path?: string }>
+  status: string
+  type: string
+  vote_average?: number
+  vote_count?: number
+  episode_run_time?: number[]
+  origin_country?: string[]
+  original_language?: string
+  popularity?: number
+  poster_path?: string
+  backdrop_path?: string
+}
+
 export class TmdbService {
   constructor(private platform: Platform) {}
   private async get(path: string, params: Record<string, string | number> = {}, signal?: AbortSignal): Promise<Record<string, any>> {
@@ -82,5 +129,33 @@ export class TmdbService {
       ...(sort === 'rating' || shelf === 'rated' ? { 'vote_count.gte': 200 } : {}),
       ...(options.genre ? { with_genres: options.genre } : {}), ...(kind === 'studio' ? { with_companies: entity! } : {}) }, signal);
     return { titles: (data.results || []).flatMap((m: unknown) => movieOf(m) || []), page, next: page < Math.min(data.total_pages || 0, 500) ? page + 1 : undefined };
+  }
+
+  // TV methods
+  async tvDetail(tvId: number, signal?: AbortSignal): Promise<TVDetail> {
+    if (!id(tvId)) throw new ServiceError('CHANGED')
+    const data = await this.get(/tv/, { append_to_response: 'aggregate_credits,recommendations' }, signal)
+    return data as TVDetail
+  }
+
+  async tvSeason(tvId: number, seasonNumber: number, signal?: AbortSignal): Promise<SeasonDetail> {
+    if (!id(tvId) || !Number.isInteger(seasonNumber) || seasonNumber < 0) throw new ServiceError('CHANGED')
+    const data = await this.get(/tv//season/, {}, signal)
+    return data as SeasonDetail
+  }
+
+  async identifyTV(title: Pick<Title, 'name' | 'year' | 'imdb'>, signal?: AbortSignal): Promise<TVDetail | null> {
+    const data = title.imdb
+      ? await this.get(/find/, { external_source: 'imdb_id' }, signal)
+      : await this.get('/search/tv', { query: title.name, ...(title.year ? { first_air_date_year: title.year } : {}) }, signal)
+    const matches = (data.tv_results || data.results || [])
+      .flatMap((t: unknown) => this.parseTVDetail(t))
+      .filter((t: TVDetail) => title.imdb || !!title.year && t.first_air_date?.startsWith(title.year) && normalized(t.name) === normalized(title.name))
+    return matches.length === 1 ? matches[0] : null
+  }
+
+  private parseTVDetail(data: any): TVDetail | undefined {
+    if (!data || typeof data !== 'object' || !id(data.id) || typeof data.name !== 'string') return undefined
+    return data as TVDetail
   }
 }
