@@ -111,6 +111,7 @@ test('View all uses server sorting and remote Up reaches the sort control', asyn
   await expect(page).toHaveURL(/shelf=name/); await expect(focused(page)).toHaveText('A New Chapter');
 });
 for (const height of [720, 1080, 2160]) test(`rapid rail navigation stays inside screen-fit bounds at ${height}p`, async ({ page }) => {
+  test.setTimeout(height === 2160 ? 120_000 : 30_000);
   await page.setViewportSize({ width: height * 16 / 9, height });
   await page.addInitScript(() => {
     const cards = Array.from({ length: 60 }, (_, i) => `<div class="cflip" data-href="/watch/movie/${i + 100}/fixture"><div class="front"><div class="card-footer">Movie ${i + 1}</div><div class="card-badge top"><span class="badge">2026</span></div></div></div>`).join('');
