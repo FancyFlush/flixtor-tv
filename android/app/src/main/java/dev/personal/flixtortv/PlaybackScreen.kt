@@ -860,7 +860,7 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
 
                 }
 
-                KeyEvent.                  KeyEvent.KEYCODE_DPAD_DOWN -> {
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
 
                       if (!controls && !ended) { controls = true; true } else false
 
@@ -880,11 +880,12 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
 
                 else -> false        }
 
-    }.focusable()) {
+    })
+} { constraints ->
 
-        val safeWidth = maxWidth - safe.calculateLeftPadding(layoutDirection) - safe.calculateRightPadding(layoutDirection)
+        val safeWidth = constraints.maxWidth - safe.calculateLeftPadding(layoutDirection) - safe.calculateRightPadding(layoutDirection)
 
-        val drawerWidth = maxOf(320.dp, minOf(620.dp, safeWidth * .36f)).coerceAtMost(safeWidth)
+        val drawerWidth = with(LocalDensity.current) { maxOf(320.dp.toPx(), minOf(620.dp.toPx(), (safeWidth * .36f).toInt())).toDp().coerceAtMost(safeWidth.toDp()) }
 
         AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
 
@@ -1424,9 +1425,9 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
 
         if (editorOpen) {
 
-            val editorHeight = maxHeight * .7f
+            val editorHeight = constraints.maxHeight * .7f
 
-            GlassSurface(Modifier.align(Alignment.BottomCenter).padding(safe).fillMaxWidth().heightIn(max = maxHeight * .8f)
+            GlassSurface(Modifier.align(Alignment.BottomCenter).padding(safe).fillMaxWidth().heightIn(max = constraints.maxHeight * .8f)
 
                 .onSizeChanged { bottomAreaHeight = with(density) { it.height.toDp() } }) {
 
@@ -1444,7 +1445,7 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
 
                 val ahead = (buffered - position).coerceAtLeast(0) / 1000
 
-                val targetSeconds = minOf(90L, ((duration - position).coerceAtLeast(0) + 999) / 1000)
+                val targetSeconds = kotlin.math.min(90L, ((duration - position).coerceAtLeast(0) + 999) / 1000)
 
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
@@ -1486,7 +1487,7 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
 
         if (buffering && failure == null && !bufferAhead && !editorOpen) GlassSurface(Modifier.align(Alignment.Center)) { Loading() }
 
-        state.stillWatchingSeconds?.let { WatchingPrompt(it, vm::continueWatching) { vm.back() } }
+        if (state.stillWatchingSeconds != null) WatchingPrompt(state.stillWatchingSeconds!!, vm::continueWatching, ::vm.back)
 
     }
 

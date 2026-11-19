@@ -610,11 +610,10 @@ class MainActivity : ComponentActivity() {
     val focus = remember(title.key) { FocusRequester() }
     var initiallyFocused by remember(title.key) { mutableStateOf(false) }
     val focusBack = s.loading || s.failure != null || (title.isSeries && detail.episodes.isEmpty())
-    val seasons = remember(detail.episodes) { detail.episodes.map { it.season }.distinct().sorted() }
-    var picked by remember(title.key) { mutableIntStateOf(0) }
-    val season = if (seasons.contains(picked)) picked else startSeason(s.viewing, title) ?: seasons.firstOrNull() ?: 1
-    val episodes = remember(detail.episodes, season, title.isSeries) {
-        if (title.isSeries) detail.ordered.filter { it.season == season } else emptyList()
+    // Keep the entire canonical episode order in one list. Do not filter to the
+    // initially selected season: users can browse every season continuously.
+    val episodes = remember(detail.episodes, title.isSeries) {
+        if (title.isSeries) detail.ordered else emptyList()
     }
     val resume = s.viewing.firstOrNull { it.title.key == title.key && !it.finished }
     val imageUrl = title.backdrop.ifBlank { title.poster }
@@ -628,7 +627,7 @@ class MainActivity : ComponentActivity() {
         contentPadding = PaddingValues(bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // Hero image — full-width, fixed aspect, scrolls with content
+        // Hero image â€” full-width, fixed aspect, scrolls with content
         item(key = "hero") {
             Box(Modifier.fillMaxWidth().then(if (imageUrl.isNotBlank()) Modifier.aspectRatio(16f / 9f)
                 else Modifier.heightIn(min = 200.dp))) {
@@ -683,7 +682,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        // Content — synopsis, actions, episodes
+        // Content â€” synopsis, actions, episodes
         item(key = "content") {
             Column(
                 Modifier
@@ -721,9 +720,10 @@ class MainActivity : ComponentActivity() {
                     }
                     GlassButton(stringResource(if (s.favorites.any { it.key == title.key }) R.string.remove_list else R.string.add_list)) { vm.toggle(title) }
                 }
-                // Season picker — shown only for multi-season series
-                if (seasons.size > 1) {
-                    SeasonPicker(seasons, season, Modifier.fillMaxWidth()) { picked = it }
+                if (title.isSeries && episodes.isNotEmpty()) {
+                    Text("ALL EPISODES  â€”  ${episodes.size}", color = TextSecondary,
+                        fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
                 }
                 // No episodes placeholder
                 if (title.isSeries && !s.loading && s.failure == null && detail.episodes.isEmpty()) {
@@ -732,16 +732,28 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        // Long anime runs must remain lazy instead of composing every episode in one item.
-        items(episodes, key = Episode::key) { episode ->
-            val viewing = s.viewing.firstOrNull { it.title.key == title.key && it.episode?.key == episode.key }
-            EpisodeRow(episode, viewing, s.episode?.key == episode.key,
-                modifier = Modifier.padding(horizontal = 24.dp), enabled = !s.loading) { vm.play(episode) }
+        // All seasons are rendered in one continuous, lazy, full-width list.
+        // Season dividers are separate lazy items, so large series remain efficient.
+        episodes.forEachIndexed { index, episode ->
+            if (index == 0 || episodes[index - 1].season != episode.season) {
+                item(key = "season-heading-${episode.season}") {
+                    Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 18.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("SEASON ${episode.season}", color = Accent, fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold)
+                        Box(Modifier.weight(1f).height(1.dp).background(TextMuted.copy(alpha = .28f)))
+                    }
+                }
+            }
+            item(key = "episode-${episode.key}") {
+                val viewing = s.viewing.firstOrNull { it.title.key == title.key && it.episode?.key == episode.key }
+                EpisodeRow(episode, viewing, s.episode?.key == episode.key,
+                    modifier = Modifier.padding(horizontal = 12.dp), enabled = !s.loading) { vm.play(episode) }
+            }
         }
     }
-}
-
-@Composable internal fun Field(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier,
+}@Composable internal fun Field(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier,
     password: Boolean = false, keyboard: KeyboardType = KeyboardType.Text) {
     var focused by remember { mutableStateOf(false) }
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
