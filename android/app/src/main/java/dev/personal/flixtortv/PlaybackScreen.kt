@@ -792,7 +792,13 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
 
     CompositionLocalProvider(LocalPlaybackInteraction provides vm::recordPlaybackInteraction) {
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).trackPlaybackInteraction().focusRequester(rootFocus).onPreviewKeyEvent { event ->
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .trackPlaybackInteraction()
+            .focusRequester(rootFocus)
+            .onPreviewKeyEvent { event ->
 
         val key = event.nativeKeyEvent
 
@@ -881,7 +887,7 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
                 else -> false        }
 
     })
-} { constraints ->
+) { constraints ->
 
         val safeWidth = constraints.maxWidth - safe.calculateLeftPadding(layoutDirection) - safe.calculateRightPadding(layoutDirection)
 
