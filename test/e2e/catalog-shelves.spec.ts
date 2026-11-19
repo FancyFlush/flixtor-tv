@@ -86,12 +86,12 @@ test('anime search cancels obsolete results and handles empty, error, retry, and
   await field.fill('broken'); await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeAttached();
   await page.evaluate(() => localStorage.setItem('flixtor-fixture:httpOverrides', '{}'));
   await activate(page, 'Try again'); await expect(page.getByRole('button', { name: 'Anime fixture 1', exact: true })).toBeAttached();
-  await field.fill(''); await expect(page.locator('#status')).toContainText('Search for anime.');
+  await field.fill(''); await expect(page.locator('#status')).toContainText('Search for anime, or use voice search.');
   await expect(page.getByRole('button', { name: 'Anime fixture 1', exact: true })).toHaveCount(0);
 });
 
 for (const height of [1080, 720]) {
-  test(`search heading stays above the input and scrolling results at ${height}p`, async ({ page }, info) => {
+  test(`search preview and compact grid scroll at ${height}p`, async ({ page }, info) => {
     await page.setViewportSize({ width: height * 16 / 9, height });
     await setup(page, { '/search': { body: anime('Jujutsu Kaisen long anime title', 30) } });
     await activate(page, 'Search');
@@ -99,12 +99,12 @@ for (const height of [1080, 720]) {
     const field = page.getByRole('textbox', { name: 'Search anime' });
     await field.fill('jujutsu');
     await page.getByRole('button', { name: 'Jujutsu Kaisen long anime title 1', exact: true }).focus();
-    for (const index of [5, 9, 13]) {
+    for (const index of [7, 13, 19]) {
       await page.keyboard.press('ArrowDown'); await expect(focused(page)).toHaveText(`Jujutsu Kaisen long anime title ${index}`);
     }
     await expect.poll(async () => {
       const input = await field.boundingBox(), poster = await focused(page).boundingBox();
-      return !!input && !!poster && poster.y >= input.y + input.height;
+      return !!input && !!poster && poster.x >= input.x + input.width && poster.height < 180;
     }).toBe(true);
     const heading = await page.evaluate(async () => {
       const path = '/src/ui/focus.ts'; const { activeElement, nodeRect } = await import(path);
