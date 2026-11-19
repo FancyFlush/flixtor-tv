@@ -867,31 +867,25 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
                 }
 
                 KeyEvent.KEYCODE_DPAD_DOWN -> {
+                  if (!controls && !ended) { controls = true; true } else false
+                }
 
-                      if (!controls && !ended) { controls = true; true } else false
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                  if (!controls && !ended) { player.seekBack(); true } else false
+                }
 
-                  }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                  if (!controls && !ended) { player.seekForward(); true } else false
+                }
 
-                  KeyEvent.KEYCODE_DPAD_LEFT -> {
+                else -> false
+            }
+        }
+    }) {
 
-                      if (!controls && !ended) { player.seekBack(); true } else false
+        val safeWidth = maxWidth - safe.calculateLeftPadding(layoutDirection) - safe.calculateRightPadding(layoutDirection)
 
-                  }
-
-                  KeyEvent.KEYCODE_DPAD_RIGHT -> {
-
-                      if (!controls && !ended) { player.seekForward(); true } else false
-
-                  }
-
-                else -> false        }
-
-    }
-) { constraints ->
-
-        val safeWidth = constraints.maxWidth - safe.calculateLeftPadding(layoutDirection) - safe.calculateRightPadding(layoutDirection)
-
-        val drawerWidth = with(LocalDensity.current) { maxOf(320.dp.toPx(), minOf(620.dp.toPx(), (safeWidth * .36f).toInt())).toDp().coerceAtMost(safeWidth.toDp()) }
+        val drawerWidth = maxOf(320.dp, minOf(620.dp, safeWidth * .36f)).coerceAtMost(safeWidth)
 
         AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
 
@@ -1415,7 +1409,6 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
                         openDrawer(PlayerDrawer.SETTINGS)
 
                     }
-                    }
 
                     GlassButton(stringResource(R.string.back), Modifier.weight(1f), variant = GlassButtonVariant.ICON) {
 
@@ -1431,9 +1424,9 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
 
         if (editorOpen) {
 
-            val editorHeight = constraints.maxHeight * .7f
+            val editorHeight = maxHeight * .7f
 
-            GlassSurface(Modifier.align(Alignment.BottomCenter).padding(safe).fillMaxWidth().heightIn(max = constraints.maxHeight * .8f)
+            GlassSurface(Modifier.align(Alignment.BottomCenter).padding(safe).fillMaxWidth().heightIn(max = maxHeight * .8f)
 
                 .onSizeChanged { bottomAreaHeight = with(density) { it.height.toDp() } }) {
 
@@ -1493,7 +1486,7 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
 
         if (buffering && failure == null && !bufferAhead && !editorOpen) GlassSurface(Modifier.align(Alignment.Center)) { Loading() }
 
-        if (state.stillWatchingSeconds != null) WatchingPrompt(state.stillWatchingSeconds!!, vm::continueWatching, ::vm.back)
+        if (state.stillWatchingSeconds != null) WatchingPrompt(state.stillWatchingSeconds!!, vm::continueWatching, vm::back)
 
     }
 
