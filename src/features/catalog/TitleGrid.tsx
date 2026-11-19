@@ -3,11 +3,11 @@ import { VirtualGrid } from '@solidtv/solid/primitives';
 import { Poster } from '../../ui/components';
 import { titleKey, type Title, type Viewing } from '../../domain/models';
 import { resumeViewing } from './catalog-state';
-export function TitleGrid(props: { header?: JSX.Element; interactiveHeader?: boolean; up?(): boolean; titles: Title[]; prefix: string; columns: number; width: number; height: number; initial?: number; autofocus?: boolean; viewing?: Viewing[]; focus?(title: Title, index: number): void; open(title: Title): void; end(): void }) {
+export function TitleGrid(props: { header?: JSX.Element; interactiveHeader?: boolean; up?(): boolean; titles: Title[]; prefix: string; columns: number; width: number; height: number; initial?: number; autofocus?: boolean; landscape?: boolean; compact?: boolean; viewing?: Viewing[]; focus?(title: Title, index: number): void; open(title: Title): void; end(): void }) {
   const header = children(() => props.header);
-  const cardWidth = () => (props.width - (props.columns - 1) * 28 - 16) / props.columns;
-  const rowGap = 28;
-  const rowHeight = () => cardWidth() * 1.5 + 78;
+  const rowGap = props.compact ? 18 : 28;
+  const cardWidth = () => (props.width - (props.columns - 1) * rowGap - 16) / props.columns;
+  const rowHeight = () => cardWidth() * (props.landscape ? 0.5625 : 1.5) + (props.compact ? 48 : 78);
   const visibleRows = () => Math.max(1, Math.floor((props.height - 20 + rowGap) / (rowHeight() + rowGap)));
   // The heading occupies a virtual row so one owner scrolls headings and media.
   const headings = Array.from({ length: props.columns }, (_, column) => ({ heading: true as const, column }));
@@ -23,7 +23,7 @@ export function TitleGrid(props: { header?: JSX.Element; interactiveHeader?: boo
         <view item={item()} skipFocus={!props.interactiveHeader || (item() as typeof headings[number]).column !== 0} forwardFocus={0} width={cardWidth()} height={82}>{(item() as typeof headings[number]).column === 0 ? header() : undefined}</view>
       }>{title => {
         const index = () => props.titles.findIndex(value => titleKey(value) === titleKey(title()));
-        return <Poster title={title()} width={cardWidth()} id={`${props.prefix}:0:${titleKey(title())}`} viewing={props.viewing && resumeViewing(props.viewing, title())}
+        return <Poster title={title()} width={cardWidth()} id={`${props.prefix}:0:${titleKey(title())}`} landscape={props.landscape} compact={props.compact} viewing={props.viewing && resumeViewing(props.viewing, title())}
           autofocus={props.autofocus !== false && (props.initial || 0) === index()} action={() => props.open(title())}
           onFocus={() => { const selected = index(); setFocusedIndex(selected); props.focus?.(title(), selected); if (selected >= props.titles.length - props.columns * 2) props.end(); }} />;
       }}</Show>}

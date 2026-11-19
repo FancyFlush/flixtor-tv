@@ -156,7 +156,7 @@ Movie discovery uses TMDB for credits, studios, trending/rated movies, and recom
 
 Details support cast, directors, production studios, and related movies. People search separates acting from directing credits. Discovery titles resolve FlixTor availability independently; metadata failures do not block already resolved provider titles. Movie sorting learns wire values from provider controls. The current guest response is a capacity notice, so live VIP ordering must still be checked with an authenticated device.
 
-Voice search uses the Android system recognition activity and device speech language. The microphone button appears when a compatible activity is installed. Recognition fills the current search mode; keyboard search remains available. The app does not override system assistant buttons, continuously listen, or require a paid speech service.
+Voice search uses the Android system recognition activity and device speech language. The microphone button appears when a compatible activity is installed. Recognition fills the current search mode; selecting the search field opens the Android TV system keyboard, whose Search/Go action loads the results. Search uses a compact multi-row landscape grid beside a selected-title description; the remote moves through and scrolls the results. The app does not override system assistant buttons, continuously listen, or require a paid speech service.
 
 Automatic next episode requires a valid credits marker, at least 90% elapsed, and no more than 90 seconds remaining; otherwise it waits for native completion. Future post-credits content blocks early advancement. Early ending markers cannot automatically seek forward. Manual Next and explicit skipping remain available.
 

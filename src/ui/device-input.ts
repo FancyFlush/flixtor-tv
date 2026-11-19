@@ -17,7 +17,8 @@ export function deviceInput() {
         input.inputMode = args.mode === 'integer' || args.mode === 'pin' ? 'numeric' : args.mode === 'time' ? 'decimal' : 'text';
         input.style.cssText = 'box-sizing:border-box;width:100%;min-width:0;padding:16px 20px;border:1px solid #768ba4;border-radius:16px;background:#080c14;color:#f5f8ff;font:inherit;caret-color:#b8e9ff';
         label.append(input); form.append(label);
-        for (const [value, text] of [['ok', inputLabels.done], ['cancel', inputLabels.cancel]]) {
+        const done = args.action === 'search' ? 'Search' : inputLabels.done;
+        for (const [value, text] of [['ok', done], ['cancel', inputLabels.cancel]]) {
           const button = document.createElement('button'); button.type = 'submit'; button.value = value; button.textContent = text;
           button.style.cssText = `padding:14px 28px;margin-right:16px;border:0;border-radius:28px;background:${value === 'ok' ? '#f5f8ff' : '#334254'};color:${value === 'ok' ? '#0a1624' : '#f5f8ff'};font:inherit`; form.append(button);
         }

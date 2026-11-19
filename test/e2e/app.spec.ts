@@ -213,38 +213,22 @@ test('search preserves text focus through refresh and supports direct hardware t
   await page.keyboard.press('ArrowDown'); await page.keyboard.type('abc'); await expect(field).toHaveValue('quietabc');
   await expect(page).toHaveURL(/q=quietabc/);
 });
-test('search keyboard wraps its row and View results provides an explicit handoff', async ({ page }) => {
+test('search uses the native keyboard and Right moves from the field to results', async ({ page }) => {
   await home(page); await activate(page, 'Search');
-  const field = page.getByRole('textbox', { name: 'Search films and TV shows' });
-  await field.fill('north'); await expect(page).toHaveURL(/q=north/); await page.keyboard.press('ArrowDown');
-  await expect(page.locator('button[data-focused="true"]')).toHaveText('A');
-  await page.keyboard.press('ArrowRight'); await expect(page.locator('button[data-focused="true"]')).toHaveText('B');
-  await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight');
-  await page.keyboard.press('ArrowRight'); await expect(page.locator('button[data-focused="true"]')).toHaveText('F');
-  await page.keyboard.press('ArrowRight'); await expect(page.locator('button[data-focused="true"]')).toHaveText('A');
-  await page.keyboard.press('ArrowLeft'); await expect(page.locator('button[data-focused="true"]')).toHaveText('F');
-  await activate(page, 'View results'); await expect(page.locator('button[data-focused="true"]')).toHaveText('The Test Series');
-  await page.keyboard.press('ArrowLeft'); await expect(page.locator('button[data-focused="true"]')).toHaveText('View results');
-});
-test('search keyboard keeps columns through short rows, actions, and symbol changes', async ({ page }) => {
-  await home(page); await activate(page, 'Search');
-  const focused = page.locator('button[data-focused="true"]');
-  await page.getByRole('button', { name: 'E', exact: true }).focus();
-  await page.keyboard.press('ArrowUp'); await expect(focused).toHaveText('View results');
-  await page.keyboard.press('ArrowDown'); await expect(focused).toHaveText('E');
-  for (const key of ['K', 'Q', 'W', 'Z', '123', 'View results']) {
-    await page.keyboard.press('ArrowDown'); await expect(focused).toHaveText(key);
-  }
-  for (const key of ['123', 'Z', 'W', 'Q', 'K', 'E']) {
-    await page.keyboard.press('ArrowUp'); await expect(focused).toHaveText(key);
-  }
-  await page.getByRole('button', { name: '123', exact: true }).focus(); await page.keyboard.press('Enter'); await expect(focused).toHaveText('ABC');
-  await page.keyboard.press('ArrowUp'); await expect(focused).toHaveText(':');
-  await page.keyboard.press('ArrowDown'); await expect(focused).toHaveText('ABC');
-  await page.keyboard.press('Enter'); await expect(focused).toHaveText('123');
-  await page.keyboard.press('ArrowUp'); await expect(focused).toHaveText('Z');
-  await page.keyboard.press('Escape'); await expect(page.getByRole('textbox')).toBeFocused();
-  await page.keyboard.press('ArrowUp'); await expect(focused).toHaveText('Movies & TV');
+  await expect(page.getByRole('button', { name: 'View results' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'A', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Enter');
+  const keyboard = page.getByRole('dialog', { name: 'Search films and TV shows' });
+  await expect(keyboard).toBeAttached();
+  await expect(keyboard.getByRole('button', { name: 'Search', exact: true })).toBeAttached();
+  const field = keyboard.getByRole('textbox', { name: 'Search films and TV shows' });
+  await field.fill('north'); await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/q=north/);
+  await expect(page.getByRole('button', { name: 'The Test Series', exact: true })).toBeAttached();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('button[data-focused="true"]')).toHaveText('The Test Series');
+  const bounds = await page.getByRole('button', { name: 'The Test Series', exact: true }).boundingBox();
+  expect(bounds).not.toBeNull(); expect(bounds!.height).toBeLessThan(180);
 });
 test('screen-fit Cancel discards draft and Save persists it', async ({ page }) => {
   await home(page); await activate(page, 'Settings'); await activate(page, 'Display'); await activate(page, /Display, Adjust screen fit/);

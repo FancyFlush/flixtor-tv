@@ -115,10 +115,11 @@ class SolidTvActivity : Activity() {
                     setTextColor(Color.rgb(245, 248, 255)); setHintTextColor(Color.rgb(183, 196, 213))
                     textSize = 22f; setPadding(28, 22, 28, 22)
                     background = GradientDrawable().apply { setColor(Color.rgb(24, 33, 46)); cornerRadius = 24f }
-                    imeOptions = EditorInfo.IME_ACTION_DONE
+                    imeOptions = if (args.optString("action") == "search") EditorInfo.IME_ACTION_SEARCH else EditorInfo.IME_ACTION_DONE
                 }
+                val search = args.optString("action") == "search"
                 input = AlertDialog.Builder(this).setTitle(args.optString("label")).setView(edit)
-                    .setPositiveButton("Done") { _, _ -> reply.postMessage(response(id, edit.text.toString()).toString()) }
+                    .setPositiveButton(if (search) "Search" else "Done") { _, _ -> reply.postMessage(response(id, edit.text.toString()).toString()) }
                     .setNegativeButton("Cancel") { _, _ -> reply.postMessage(response(id, JSONObject.NULL).toString()) }
                     .setOnCancelListener { reply.postMessage(response(id, JSONObject.NULL).toString()) }.create()
                 input?.show()
@@ -128,7 +129,9 @@ class SolidTvActivity : Activity() {
                     setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
                 }
                 edit.setOnEditorActionListener { _, action, _ ->
-                    if (action == EditorInfo.IME_ACTION_DONE) { input?.getButton(AlertDialog.BUTTON_POSITIVE)?.performClick(); true } else false
+                    if (action == EditorInfo.IME_ACTION_SEARCH || action == EditorInfo.IME_ACTION_GO || action == EditorInfo.IME_ACTION_DONE) {
+                        input?.getButton(AlertDialog.BUTTON_POSITIVE)?.performClick(); true
+                    } else false
                 }
                 edit.requestFocus()
             } else capabilities.call(id, method, args) { result -> reply.postMessage(result.toString()) }

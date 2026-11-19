@@ -60,7 +60,7 @@ export function MetadataSections(props: { metadata: MovieMetadata }) {
   </>;
 }
 
-export function EntityResults(props: { kind: 'people' | 'studios'; query: string; prefix: string; width: number }) {
+export function EntityResults(props: { kind: 'people' | 'studios'; query: string; prefix: string; width: number; firstFocus?(id: string): void }) {
   const app = useApp(), navigate = useNavigate();
   const origin = app.browseOrigins.get(props.prefix);
   const focusId = (entity: Entity, directing = false) => `${props.prefix}:${entity.id}:${directing ? 'director' : props.kind}`;
@@ -72,6 +72,7 @@ export function EntityResults(props: { kind: 'people' | 'studios'; query: string
     initialPageParam: 1, maxPages: 8, staleTime: METADATA_TTL,
     queryFn: ({ pageParam, signal }) => app.tmdb.search(props.kind, props.query, pageParam, signal), getNextPageParam: last => last.next }));
   const items = createMemo(() => [...new Map((query.isSuccess ? query.data : undefined)?.pages.flatMap(p => p.entities).map(e => [e.id, e]) || []).values()]);
+  createEffect(() => { const first = items()[0]; if (first) props.firstFocus?.(focusId(first)); });
   const end = () => { if (query.hasNextPage && !query.isFetching) void query.fetchNextPage(); };
   const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(n => n[0]).join('').toUpperCase();
   const rowGap = 24;

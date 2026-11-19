@@ -8,14 +8,15 @@ import { activeElement, activeScope, announce, FocusScope, focusElement, nodeRec
 import { editValue, pinDigit, type InputMode, type InputRequest } from './input-state';
 
 export interface FieldHandle { focus(): void; edit(key: string): void }
-export function TextField(props: { label: string; value: string; change(value: string): void; width: number; mode?: InputMode; maxLength?: number; id: string; up?(): void; down?(): void; submit?(): void; handle?(handle: FieldHandle): void }) {
+export function TextField(props: { label: string; value: string; change(value: string): void; width: number; mode?: InputMode; maxLength?: number; id: string; autofocus?: boolean; activate?(): void; up?(): void; down?(): void; right?(): void; submit?(): void; handle?(handle: FieldHandle): void }) {
   let node: ElementNode | undefined, input: HTMLInputElement | undefined;
   const scope = useContext(FocusScope);
   const [focused, setFocused] = createSignal(false);
-  registerFocus(() => props.id, () => node);
+  registerFocus(() => props.id, () => node, () => !!props.autofocus);
   onMount(() => {
     input = document.createElement('input'); input.setAttribute('aria-label', props.label); input.dataset.scope = scope;
     input.type = props.mode === 'password' ? 'password' : 'text'; input.inputMode = props.mode === 'integer' ? 'numeric' : props.mode === 'time' ? 'decimal' : 'text';
+    if (props.activate) { input.inputMode = 'search'; input.setAttribute('enterkeyhint', 'search'); }
     input.autocomplete = 'off'; input.spellcheck = false; input.maxLength = props.maxLength || 256; input.value = props.value;
     input.style.cssText = 'position:fixed;box-sizing:border-box;z-index:10;background:transparent;border:0;outline:0;color:#f5f8ff;padding:0 22px;font-family:Roboto,Arial,sans-serif;caret-color:#b8e9ff;';
     input.onfocus = () => { setFocused(true); focusElement(node); };
@@ -26,6 +27,9 @@ export function TextField(props: { label: string; value: string; change(value: s
       if (event.isComposing) return;
       if (event.key === 'ArrowDown') { event.preventDefault(); input!.blur(); props.down?.(); }
       if (event.key === 'ArrowUp' && props.up) { event.preventDefault(); input!.blur(); props.up(); }
+      if (event.key === 'ArrowRight' && props.right && input!.selectionStart === input!.value.length && input!.selectionEnd === input!.value.length) {
+        event.preventDefault(); input!.blur(); props.right();
+      }
       if (event.key === 'Enter') { event.preventDefault(); props.submit?.(); }
       if (!['Escape', 'Tab'].includes(event.key)) event.stopPropagation();
     };
@@ -43,8 +47,10 @@ export function TextField(props: { label: string; value: string; change(value: s
     input.hidden = !rect.visible;
   });
   onCleanup(() => { if (input) input.value = ''; input?.remove(); });
-  return <view ref={node} width={props.width} height={76} color={palette.panelSolid} borderRadius={20} border={{ width: focused() ? 2 : 1, color: focused() ? palette.accent : palette.line }}
-    onEnter={() => input?.focus()} onUp={() => { if (!props.up) return false; props.up(); return true; }} onDown={() => { props.down?.(); return true; }} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />;
+  return <view ref={node} width={props.width} height={76} autofocus={props.autofocus} color={palette.panelSolid} borderRadius={20} border={{ width: focused() ? 2 : 1, color: focused() ? palette.accent : palette.line }}
+    onEnter={() => { if (props.activate) props.activate(); else input?.focus(); }} onUp={() => { if (!props.up) return false; props.up(); return true; }}
+    onDown={() => { if (!props.down) return false; props.down(); return true; }} onRight={() => { if (!props.right) return false; props.right(); return true; }}
+    onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />;
 }
 
 export function Keyboard(props: { edit(key: string): void; done(): void; doneLabel?: string; leave?(): void; width?: number; numeric?: boolean; prefix?: string; autofocus?: boolean; cancel?(): void; keyFocus?(id: string): void; pending?: boolean }) {

@@ -5,7 +5,7 @@ import { Column, Row, VirtualGrid } from '@solidtv/solid/primitives';
 import { useApp } from '../../app/context';
 import { Button, Menu, palette, Poster, Status, restoreFocus, time } from '../../ui/components';
 import { Overlay } from '../../ui/Overlay';
-import { Keyboard, TextField, type FieldHandle } from '../../ui/Input';
+import { TextField, type FieldHandle } from '../../ui/Input';
 import { failureOf, finished, titleKey, type Title, type Viewing } from '../../domain/models';
 import { ContentError } from '../../ui/ContentError';
 import type { ContentOperation } from '../../ui/content-recovery';
@@ -241,24 +241,65 @@ export function Catalog() {
 function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, query: string): void; query: string; change(value: string): void; titles: Title[]; pending: boolean; error: unknown; retry(): void; prefix: string; initial: number; restore: boolean; focus(title: Title, index: number): void; open(title: Title): void; end(): void }) {
   const app = useApp(), location = useLocation(); const [draft, setDraft] = createSignal(props.query);
   const [listening, setListening] = createSignal(false);
+  const [firstEntityFocus, setFirstEntityFocus] = createSignal('');
+  const [selected, setSelected] = createSignal<Title>(), [previewTitle, setPreviewTitle] = createSignal<Title>();
   let voice: AbortController | undefined;
+  let previewTimer: ReturnType<typeof setTimeout> | undefined;
+  const selectTitle = (title: Title) => {
+    setSelected(title);
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => setPreviewTitle(title), 250);
+  };
+  const preview = createQuery(() => ({
+    queryKey: ['detail', previewTitle() ? titleKey(previewTitle()!) : '', app.profileId(), app.authRevision()],
+    enabled: !!previewTitle() && !previewTitle()!.synopsis,
+    retry: false,
+    queryFn: ({ signal }) => previewTitle()!.source === 'HIANIME'
+      ? app.anime.detail(previewTitle()!, signal) : app.flixtor.detail(previewTitle()!, signal),
+  }));
+  createEffect(on(() => [props.query, props.titles[0]] as const, ([query, first]) => {
+    clearTimeout(previewTimer);
+    if (!query || !first) { setSelected(undefined); setPreviewTitle(undefined); }
+    else selectTitle(first);
+  }));
   const voiceKey = () => JSON.stringify([props.mode, app.profileId(), location.pathname, draft()]);
   createEffect(on(() => [props.mode, app.profileId(), location.pathname, props.query], () => { voice?.abort(); setListening(false); }));
-  onCleanup(() => voice?.abort());
+  onCleanup(() => { voice?.abort(); clearTimeout(previewTimer); });
   const dictate = async () => {
     if (listening()) return;
     clearTimeout(timer); const key = voiceKey(), request = new AbortController(); voice = request; setListening(true);
     try { const text = await app.platform.call<string | null>('voice.search', {}, request.signal);
-      if (!request.signal.aborted && key === voiceKey() && text?.trim()) { const value = text.trim().slice(0, 64); setDraft(value); props.change(value); }
+      if (!request.signal.aborted && key === voiceKey() && text?.trim()) { const value = text.trim().slice(0, 64); setDraft(value); props.change(value); restoreFocus('search-field'); }
     } catch { if (!request.signal.aborted) app.notify('Voice search unavailable. Use the keyboard.'); }
     finally { if (voice === request) { setListening(false); if (!request.signal.aborted && key === voiceKey()) restoreFocus('search-voice'); voice = undefined; } }
   };
-  let field: FieldHandle | undefined, timer: ReturnType<typeof setTimeout> | undefined, keyboardFocus = 'search-0-0';
+  let field: FieldHandle | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   createEffect(on(() => [props.query, props.mode] as const, ([value]) => { clearTimeout(timer); setDraft(value); }));
   const change = (value: string) => { setDraft(value); clearTimeout(timer); timer = setTimeout(() => props.change(value.trim().slice(0, 64)), 300); };
   const label = () => props.mode === 'anime' ? 'Search anime' : props.mode === 'people' ? 'Search actors and directors' : props.mode === 'studios' ? 'Search production studios' : 'Search films and TV shows';
   const switchMode = (mode: SearchMode) => { if (mode === props.mode) return; clearTimeout(timer); props.switchMode(mode, draft().trim().slice(0, 64)); };
-  const done = () => { clearTimeout(timer); props.change(draft().trim().slice(0, 64)); if (props.titles[0]) restoreFocus(`${props.prefix}:0:${titleKey(props.titles[0])}`); };
+  const submit = (value = draft()) => {
+    clearTimeout(timer);
+    const query = value.trim().slice(0, 64);
+    setDraft(query);
+    props.change(query);
+  };
+  const openKeyboard = () => app.run(async () => {
+    clearTimeout(timer);
+    const value = await app.platform.call<string | null>('input', { label: label(), value: draft(), action: 'search' });
+    if (alive && value !== null) { submit(value); restoreFocus('search-field'); }
+  });
+  const rightToResults = () => {
+    const first = props.titles[0];
+    if (first) return restoreFocus(`${props.prefix}:0:${titleKey(first)}`);
+    return firstEntityFocus() ? restoreFocus(firstEntityFocus()) : false;
+  };
+  const previewMatches = () => !!previewTitle() && !!selected() && titleKey(previewTitle()!) === titleKey(selected()!);
+  const synopsis = () => selected()?.synopsis || (previewMatches() ? preview.data?.title.synopsis : '');
+  const previewMessage = () => !selected() ? 'Choose a title to see its description.'
+    : synopsis() ? '' : !previewMatches() || preview.isFetching ? 'Loading description…'
+      : preview.error ? 'Description unavailable.' : 'No description available.';
+  const downToVoice = () => app.host.voice ? restoreFocus('search-voice') : false;
   let alive = true;
   const keydown = (event: KeyboardEvent) => {
     if (event.target instanceof HTMLInputElement || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || document.querySelector('dialog[open]') || app.inputRequest() || activeScope() !== 'screen') return;
@@ -273,23 +314,28 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
       <Button id="search-mode-anime" label="Anime" width={140} selected={props.mode === 'anime'} action={() => switchMode('anime')} />
       <Button id="search-mode-people" label="People" width={160} selected={props.mode === 'people'} action={() => switchMode('people')} />
       <Button id="search-mode-studios" label="Studios" width={160} selected={props.mode === 'studios'} action={() => switchMode('studios')} />
-      <Button label="Device keyboard" width={280} action={() => app.run(async () => { const value = await app.platform.call<string | null>('input', { label: label(), value: draft() }); if (alive && value !== null) change(value); })} />
     </Row>
-    <Row width={1728} height={100} gap={24}><TextField id="search-field" label={label()} value={draft()} change={change} width={app.host.voice ? 1404 : 1728} maxLength={64} handle={handle => field = handle} up={() => restoreFocus(`search-mode-${props.mode}`)} down={() => restoreFocus('search-0-0')} submit={done} /><Show when={app.host.voice}><Button id="search-voice" label={listening() ? 'Listening…' : 'Voice search'} icon="microphone" width={284} disabled={listening()} action={() => void dictate()} /></Show></Row>
-    <view width={1728} height={620} clipping={[0, 20, 20, 20]} forwardFocus={0}>
-    <Row width={1728} height={620} gap={50}>
-      <Column width={580} height={620} gap={12} scroll="none">
-        <Keyboard width={580} prefix="search" autofocus={!props.restore} leave={() => field?.focus()} doneLabel="View results" edit={key => { if (field) field.edit(key); else change(key === 'Delete' ? draft().slice(0, -1) : key === 'Clear' ? '' : draft() + (key === 'Space' ? ' ' : key)); }} done={done}
-          keyFocus={id => { keyboardFocus = id; }} />
-      </Column>
-      <Column width={1098} height={620} gap={16} scroll="none" onLeft={() => restoreFocus(keyboardFocus)}>
-        <Show when={props.pending}><Status width={1098} message="Searching…" /></Show>
-        <Show when={!props.query}><Status width={1098} message={props.mode === 'anime' ? 'Search for anime. Type, or use the keyboard.' : 'Search for a film or TV show. Type, or use the keyboard.'} /></Show>
-        <Show when={['media', 'anime'].includes(props.mode) && props.query && !props.pending && !props.error && !props.titles.length}><Status width={1098} message={`No results for “${props.query}”. Try a different title.`} /></Show>
-        <Show when={props.mode === 'people' || props.mode === 'studios' ? props.prefix : undefined} keyed>{prefix => <EntityResults kind={props.mode as 'people' | 'studios'} query={props.query} prefix={prefix} width={1098} />}</Show>
-        <Show when={props.prefix} keyed>{prefix => <Show when={props.titles.length}><TitleGrid titles={props.titles} prefix={prefix} columns={4} width={1098} height={600} initial={props.initial} autofocus={props.restore} focus={props.focus} open={props.open} end={props.end} /></Show>}</Show>
-      </Column>
-    </Row>
+    <view width={1728} height={742} clipping={[0, 20, 20, 20]} forwardFocus={0}>
+      <Row width={1728} height={742} gap={32}>
+        <Column width={400} height={742} gap={20} scroll="none">
+          <TextField id="search-field" label={label()} value={draft()} change={change} width={400} maxLength={64} autofocus={!props.restore}
+            activate={openKeyboard} handle={handle => field = handle} up={() => restoreFocus(`search-mode-${props.mode}`)} down={downToVoice} right={rightToResults} submit={() => submit()} />
+          <Show when={app.host.voice}><Button id="search-voice" label={listening() ? 'Listening…' : 'Voice search'} icon="microphone" width={400} disabled={listening()} action={() => void dictate()} /></Show>
+          <Show when={!props.query}><Status width={400} message={props.mode === 'anime' ? 'Search for anime, or use voice search.' : 'Search for a film or TV show, or use voice search.'} /></Show>
+          <Show when={selected()} keyed>{title => <Column width={400} height={510} gap={14} scroll="none">
+            <text skipFocus width={400} height={80} fontSize={34} fontFamily="Roboto700" maxLines={2}>{title.name}</text>
+            <text skipFocus width={400} height={36} fontSize={22} color={palette.muted} maxLines={1}>{[title.year, title.rating ? `Rating ${title.rating}` : '', title.genres].filter(Boolean).join('   ·   ')}</text>
+            <Show when={synopsis()}><text skipFocus width={400} height={310} fontSize={24} color={palette.muted} maxLines={8}>{synopsis()}</text></Show>
+            <Show when={previewMessage()}><Status width={400} message={previewMessage()} /></Show>
+          </Column>}</Show>
+        </Column>
+        <Column width={1296} height={742} gap={16} scroll="none" onLeft={() => restoreFocus('search-field')}>
+          <Show when={props.pending}><Status width={1296} message="Searching…" /></Show>
+          <Show when={['media', 'anime'].includes(props.mode) && props.query && !props.pending && !props.error && !props.titles.length}><Status width={1296} message={`No results for “${props.query}”. Try a different title.`} /></Show>
+          <Show when={props.mode === 'people' || props.mode === 'studios' ? props.prefix : undefined} keyed>{prefix => <EntityResults kind={props.mode as 'people' | 'studios'} query={props.query} prefix={prefix} width={1296} firstFocus={setFirstEntityFocus} />}</Show>
+          <Show when={props.prefix} keyed>{prefix => <Show when={props.titles.length}><TitleGrid titles={props.titles} prefix={prefix} columns={6} width={1296} height={722} initial={props.initial} autofocus={props.restore} landscape compact focus={(title, index) => { selectTitle(title); props.focus(title, index); }} open={props.open} end={props.end} /></Show>}</Show>
+        </Column>
+      </Row>
     </view>
   </Column>;
 }
