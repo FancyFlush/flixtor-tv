@@ -9,41 +9,7 @@ export interface Movie extends DiscoveryTitle { tmdbId: number; imdb?: string; p
 export interface Entity { id: number; name: string; image?: string; character?: string }
 export interface MovieMetadata { title: Movie; cast: Entity[]; directors: Entity[]; studios: Entity[]; related: Movie[] }
 export interface MoviePage { titles: Movie[]; page: number; next?: number }
-const image = (value: unknown, size = 'w500') => typeof value === 'string' && /^\/[\w./-]+$/.test(value) ? `https://image.tmdb.org/t/p/${size}${value}` : undefined;
-const id = (value: unknown) => Number.isSafeInteger(value) && Number(value) > 0;
-const names = (value: unknown) => Array.isArray(value) ? value.filter(x => x && typeof x.name === 'string').map(x => x.name as string) : [];
-export function movieOf(value: unknown): Movie | undefined {
-  if (!value || typeof value !== 'object') return;
-  const m = value as Record<string, any>;
-  if (!id(m.id) || typeof m.title !== 'string' || !m.title.trim()) return;
-  return { id: `tmdb:${m.id}`, tmdbId: m.id, popularity: Number.isFinite(m.popularity) ? m.popularity : 0, released: typeof m.release_date === 'string' ? m.release_date : undefined, imdb: /^tt\d{7,10}$/.test(m.imdb_id) ? m.imdb_id : undefined, type: 'movie', name: m.title.trim(),
-    poster: image(m.poster_path), backdrop: image(m.backdrop_path, 'w1280'), year: /^\d{4}/.exec(m.release_date || '')?.[0],
-    genres: names(m.genres), synopsis: typeof m.overview === 'string' ? m.overview : undefined,
-    rating: Number.isFinite(m.vote_average) && m.vote_count > 0 ? Number(m.vote_average).toFixed(1) : undefined };
-}
-function entities(value: unknown, portrait = true): Entity[] {
-  if (!Array.isArray(value)) return [];
-  return [...new Map(value.flatMap(m => id(m?.id) && typeof m.name === 'string' ? [[m.id, { id: m.id, name: m.name, image: image(portrait ? m.profile_path : m.logo_path, 'w185'), character: typeof m.character === 'string' ? m.character : undefined }] as const] : [])).values()];
-}
-export function parseMovieMetadata(data: Record<string, any>): MovieMetadata {
-  const title = movieOf(data); if (!title) throw new ServiceError('CHANGED');
-  return { title, cast: entities(data.credits?.cast), directors: entities(data.credits?.crew?.filter((p: any) => p.job === 'Director')),
-    studios: entities(data.production_companies, false), related: (data.recommendations?.results || []).flatMap((m: unknown) => movieOf(m) || []) };
-}
-const normalized = (s: string) => s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-export function matchMovie(movie: Movie, candidates: Title[]) {
-  const exact = candidates.filter(t => !series(t) && !!movie.imdb && t.imdb === movie.imdb);
-  if (exact.length) return exact.length === 1 ? exact[0] : undefined;
-  const matches = candidates.filter(t => !series(t) && (!t.imdb || !movie.imdb || t.imdb === movie.imdb) && !!movie.year && t.year === movie.year && normalized(t.name) === normalized(movie.name));
-  return matches.length === 1 ? matches[0] : undefined;
-}
-export function directedMovies(credits: Record<string, any>) {
-  return (Array.isArray(credits.crew) ? credits.crew : []).filter((c: any) => c.job === 'Director').flatMap((c: unknown) => movieOf(c) || []);
-}
-export function sortMovies(titles: Movie[], sort: MovieSort) {
-  const unique = [...new Map(titles.map(t => [t.tmdbId, t])).values()];
-  return unique.sort((a, b) => (sort === 'popular' ? (b.popularity || 0) - (a.popularity || 0) : sort === 'release' ? (b.released || '').localeCompare(a.released || '') : Number(b.rating || 0) - Number(a.rating || 0)) || a.name.localeCompare(b.name));
-}
+
 // TV types
 export interface Episode {
   id: number
@@ -91,6 +57,41 @@ export interface TVDetail {
   backdrop_path?: string
 }
 
+const image = (value: unknown, size = 'w500') => typeof value === 'string' && /^\/[\w./-]+$/.test(value) ? `https://image.tmdb.org/t/p/${size}${value}` : undefined;
+const id = (value: unknown) => Number.isSafeInteger(value) && Number(value) > 0;
+const names = (value: unknown) => Array.isArray(value) ? value.filter(x => x && typeof x.name === 'string').map(x => x.name as string) : [];
+export function movieOf(value: unknown): Movie | undefined {
+  if (!value || typeof value !== 'object') return;
+  const m = value as Record<string, any>;
+  if (!id(m.id) || typeof m.title !== 'string' || !m.title.trim()) return;
+  return { id: `tmdb:${m.id}`, tmdbId: m.id, popularity: Number.isFinite(m.popularity) ? m.popularity : 0, released: typeof m.release_date === 'string' ? m.release_date : undefined, imdb: /^tt\d{7,10}$/.test(m.imdb_id) ? m.imdb_id : undefined, type: 'movie', name: m.title.trim(),
+    poster: image(m.poster_path), backdrop: image(m.backdrop_path, 'w1280'), year: /^\d{4}/.exec(m.release_date || '')?.[0],
+    genres: names(m.genres), synopsis: typeof m.overview === 'string' ? m.overview : undefined,
+    rating: Number.isFinite(m.vote_average) && m.vote_count > 0 ? Number(m.vote_average).toFixed(1) : undefined };
+}
+function entities(value: unknown, portrait = true): Entity[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Map(value.flatMap(m => id(m?.id) && typeof m.name === 'string' ? [[m.id, { id: m.id, name: m.name, image: image(portrait ? m.profile_path : m.logo_path, 'w185'), character: typeof m.character === 'string' ? m.character : undefined }] as const] : [])).values()];
+}
+export function parseMovieMetadata(data: Record<string, any>): MovieMetadata {
+  const title = movieOf(data); if (!title) throw new ServiceError('CHANGED');
+  return { title, cast: entities(data.credits?.cast), directors: entities(data.credits?.crew?.filter((p: any) => p.job === 'Director')),
+    studios: entities(data.production_companies, false), related: (data.recommendations?.results || []).flatMap((m: unknown) => movieOf(m) || []) };
+}
+const normalized = (s: string) => s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+export function matchMovie(movie: Movie, candidates: Title[]) {
+  const exact = candidates.filter(t => !series(t) && !!movie.imdb && t.imdb === movie.imdb);
+  if (exact.length) return exact.length === 1 ? exact[0] : undefined;
+  const matches = candidates.filter(t => !series(t) && (!t.imdb || !movie.imdb || t.imdb === movie.imdb) && !!movie.year && t.year === movie.year && normalized(t.name) === normalized(movie.name));
+  return matches.length === 1 ? matches[0] : undefined;
+}
+export function directedMovies(credits: Record<string, any>) {
+  return (Array.isArray(credits.crew) ? credits.crew : []).filter((c: any) => c.job === 'Director').flatMap((c: unknown) => movieOf(c) || []);
+}
+export function sortMovies(titles: Movie[], sort: MovieSort) {
+  const unique = [...new Map(titles.map(t => [t.tmdbId, t])).values()];
+  return unique.sort((a, b) => (sort === 'popular' ? (b.popularity || 0) - (a.popularity || 0) : sort === 'release' ? (b.released || '').localeCompare(a.released || '') : Number(b.rating || 0) - Number(a.rating || 0)) || a.name.localeCompare(b.name));
+}
 export class TmdbService {
   constructor(private platform: Platform) {}
   private async get(path: string, params: Record<string, string | number> = {}, signal?: AbortSignal): Promise<Record<string, any>> {
@@ -134,19 +135,19 @@ export class TmdbService {
   // TV methods
   async tvDetail(tvId: number, signal?: AbortSignal): Promise<TVDetail> {
     if (!id(tvId)) throw new ServiceError('CHANGED')
-    const data = await this.get(/tv/, { append_to_response: 'aggregate_credits,recommendations' }, signal)
+    const data = await this.get(`/tv/${tvId}`, { append_to_response: 'aggregate_credits,recommendations' }, signal)
     return data as TVDetail
   }
 
   async tvSeason(tvId: number, seasonNumber: number, signal?: AbortSignal): Promise<SeasonDetail> {
     if (!id(tvId) || !Number.isInteger(seasonNumber) || seasonNumber < 0) throw new ServiceError('CHANGED')
-    const data = await this.get(/tv//season/, {}, signal)
+    const data = await this.get(`/tv/${tvId}/season/${seasonNumber}`, {}, signal)
     return data as SeasonDetail
   }
 
   async identifyTV(title: Pick<Title, 'name' | 'year' | 'imdb'>, signal?: AbortSignal): Promise<TVDetail | null> {
     const data = title.imdb
-      ? await this.get(/find/, { external_source: 'imdb_id' }, signal)
+      ? await this.get(`/find/${title.imdb}`, { external_source: 'imdb_id' }, signal)
       : await this.get('/search/tv', { query: title.name, ...(title.year ? { first_air_date_year: title.year } : {}) }, signal)
     const matches = (data.tv_results || data.results || [])
       .flatMap((t: unknown) => this.parseTVDetail(t))
