@@ -51,7 +51,7 @@ class SiteParserTest {
         assertEquals("Example synopsis", detail.title.synopsis)
     }
     @Test fun transportEncodingRoundTripsUtf8AndSignedUrls() {
-        val json = """{"file":"https://media.example/playlist.m3u8?token=abc%2B123","tracks":[{"file":"https://media.example/sub.vtt","label":"日本語","kind":"captions"}]}"""
+        val json = """{"file":"https://media.example/playlist.m3u8?token=abc%2B123","tracks":[{"file":"https://media.example/sub.vtt","label":"�-��o���z","kind":"captions"}]}"""
         val shifted = json.map { c -> if (c.code in 33..126) (33 + (c.code - 33 + 47) % 94).toChar() else c }.joinToString("")
         val encoded = Base64.getEncoder().encodeToString(shifted.toByteArray(Charsets.UTF_8)).map { c ->
             when(c) {
@@ -61,7 +61,7 @@ class SiteParserTest {
             }
         }.joinToString("")
         assertEquals(json, SiteParser.decodePlayback(encoded))
-        assertEquals("日本語", SiteParser.stream(encoded).captions.single().label)
+        assertEquals("�-��o���z", SiteParser.stream(encoded).captions.single().label)
         assertTrue(SiteParser.stream(encoded).uri.endsWith("token=abc%2B123"))
     }
     @Test fun plainPlaybackJsonAndRelativeCaptionsAreSupported() {
@@ -151,4 +151,55 @@ class SiteParserTest {
         catch (error: SiteException) { assertEquals(Failure.VIP, error.failure) }
     }
 
+    @Test fun multiSeasonEpisodesBeyondSixAreParsed() {
+        val original = Title("12345", "/watch/tv/12345/test-show", "Test Show")
+        val html = buildHtmlWithEpisodes(8, 3) // 8 episodes across 3 seasons
+        val detail = SiteParser.detail(html, original)
+        assertEquals(8, detail.episodes.size)
+        assertEquals(listOf(1, 2, 3), detail.episodes.map { it.season }.distinct().sorted())
+    }
+
+    @Test fun frasierAllEpisodesParsed() {
+        val original = Title("194546", "/watch/tv/194546/frasier", "Frasier")
+        val html = buildFrasierHtml()
+        val detail = SiteParser.detail(html, original)
+        // Frasier has 257 episodes across 11 seasons
+        assertEquals(257, detail.episodes.size)
+        assertEquals(listOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11), detail.episodes.map { it.season }.distinct().sorted())
+    }
+
+    private fun buildHtmlWithEpisodes(totalEpisodes: Int, seasons: Int): String {
+        val sb = StringBuilder()
+        sb.append("""<meta property="og:type" content="video.tv_show">
+            <meta name="description" content="Test synopsis">
+            <table>""")
+        var epNum = 1
+        for (season in 1..seasons) {
+            val epsInSeason = if (season == seasons) totalEpisodes - epNum + 1 else totalEpisodes / seasons
+            repeat(epsInSeason) {
+                sb.append("<tr class=\"eplist\" data-pes=\"$season\" data-pep=\"$epNum\"><td class=\"epTitle\">Episode $epNum</td></tr>")
+                epNum++
+            }
+        }
+        sb.append("</table>")
+        return sb.toString()
+    }
+
+    private fun buildFrasierHtml(): String {
+        val sb = StringBuilder()
+        sb.append("""<meta property="og:type" content="video.tv_show">
+            <meta name="description" content="Frasier synopsis">
+            <table>""")
+        // Frasier: 257 episodes across 11 seasons
+        val episodesPerSeason = intArrayOf(24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 17) // = 257
+        var epNum = 1
+        for ((season, count) in episodesPerSeason.withIndex()) {
+            repeat(count) {
+                sb.append("<tr class=\"eplist\" data-pes=\"${season + 1}\" data-pep=\"$epNum\"><td class=\"epTitle\">Episode $epNum</td></tr>")
+                epNum++
+            }
+        }
+        sb.append("</table>")
+        return sb.toString()
+    }
 }
