@@ -886,7 +886,7 @@ private enum class PlayerSettingsPage { ROOT, QUALITY, AUDIO, SUBTITLES, AUTOPLA
 
                 else -> false        }
 
-    })
+    }
 ) { constraints ->
 
         val safeWidth = constraints.maxWidth - safe.calculateLeftPadding(layoutDirection) - safe.calculateRightPadding(layoutDirection)
