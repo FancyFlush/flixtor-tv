@@ -22,8 +22,8 @@ const SCREEN_HEIGHT = 1080;
 // Baseline alpha applied to backdrop textures so high-vibrancy artwork is dimmed
 // in dark living rooms and stays legible behind UI text.
 const BACKDROP_ALPHA = 0.45;
-const CROSSFADE_MS = 400;
-const SWAP_MS = 420;
+const CROSSFADE_MS = 2000;
+const SWAP_MS = 2020;
 const BLUR_RADIUS = 40;
 const BLUR_RESOLUTION = 0.3;
 

@@ -1,8 +1,6 @@
 package dev.personal.flixtortv
 
 import android.app.Activity
-import android.content.Intent
-import android.speech.RecognizerIntent
 import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -31,9 +29,6 @@ class SolidTvActivity : Activity() {
     private var recovery = 0
     private var ready = false
     private var destroyed = false
-    private var voiceReply: ((Any?) -> Unit)? = null
-    private val voiceRequest = 4107
-    fun voiceAvailable() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).resolveActivity(packageManager) != null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -89,20 +84,7 @@ class SolidTvActivity : Activity() {
             val method = request.optString("method")
             val args = request.optJSONObject("args") ?: JSONObject()
             if (method == "ready") ready = true
-            if (method == "voice.search") {
-                if (voiceId.isNotEmpty() || !voiceAvailable()) reply.postMessage(response(id, JSONObject.NULL).toString())
-                else {
-                    voiceId = id
-                    voiceReply = { value -> reply.postMessage(response(id, value).toString()) }
-                    try { startActivityForResult(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                        .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        .putExtra(RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault().toLanguageTag())
-                        .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1), voiceRequest) }
-                    catch (_: Exception) { voiceReply?.invoke(JSONObject.NULL); voiceReply = null; voiceId = "" }
-                }
-            } else if (method == "cancel" && args.optString("id").isNotEmpty()) {
-                // Bridge cancellation also retires a recognizer result; no late transcript is delivered.
-                if (voiceId == args.optString("id")) { voiceReply = null; runCatching { finishActivity(voiceRequest) } }
+            if (method == "cancel" && args.optString("id").isNotEmpty()) {
                 capabilities.call(id, method, args) { result -> reply.postMessage(result.toString()) }
             } else if (method == "input") {
                 val edit = EditText(this).apply {
@@ -142,14 +124,6 @@ class SolidTvActivity : Activity() {
         web.requestFocus()
     }
     private fun response(id: String, value: Any?) = JSONObject().put("v", 1).put("id", id).put("value", value)
-    private var voiceId = ""
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != voiceRequest) return
-        val reply = voiceReply; voiceReply = null; voiceId = ""
-        val text = if (resultCode == RESULT_OK) data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()?.take(64) else null
-        reply?.invoke(text?.takeIf { it.isNotEmpty() } ?: JSONObject.NULL)
-    }
     private fun emit(type: String, value: JSONObject) {
         if (!ready || destroyed || isFinishing || !::web.isInitialized) return
         runOnUiThread { if (!destroyed && ready && !isFinishing) web.evaluateJavascript("window.__platformEvent?.(${JSONObject().put("type", type).put("value", value)});", null) }
@@ -174,7 +148,6 @@ class SolidTvActivity : Activity() {
     override fun onDestroy() {
         destroyed = true; ready = false
         if (::web.isInitialized && WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) WebViewCompat.removeWebMessageListener(web, "nativeHost")
-        voiceReply = null
         input?.dismiss()
         if (::capabilities.isInitialized) capabilities.close()
         if (::player.isInitialized) player.close()

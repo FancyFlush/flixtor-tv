@@ -240,11 +240,9 @@ export function Catalog() {
 
 
 function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, query: string): void; query: string; change(value: string): void; titles: Title[]; pending: boolean; error: unknown; retry(): void; prefix: string; initial: number; restore: boolean; focus(title: Title, index: number): void; open(title: Title): void; end(): void }) {
-  const app = useApp(), location = useLocation(); const [draft, setDraft] = createSignal(props.query);
-  const [listening, setListening] = createSignal(false);
+  const app = useApp(); const [draft, setDraft] = createSignal(props.query);
   const [firstEntityFocus, setFirstEntityFocus] = createSignal('');
   const [selected, setSelected] = createSignal<Title>(), [previewTitle, setPreviewTitle] = createSignal<Title>();
-  let voice: AbortController | undefined;
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let backdropTimer: ReturnType<typeof setTimeout> | undefined;
   const selectTitle = (title: Title) => {
@@ -269,17 +267,7 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
     }
     else selectTitle(first);
   }));
-  const voiceKey = () => JSON.stringify([props.mode, app.profileId(), location.pathname, draft()]);
-  createEffect(on(() => [props.mode, app.profileId(), location.pathname, props.query], () => { voice?.abort(); setListening(false); }));
-  onCleanup(() => { voice?.abort(); clearTimeout(previewTimer); clearTimeout(backdropTimer); });
-  const dictate = async () => {
-    if (listening()) return;
-    clearTimeout(timer); const key = voiceKey(), request = new AbortController(); voice = request; setListening(true);
-    try { const text = await app.platform.call<string | null>('voice.search', {}, request.signal);
-      if (!request.signal.aborted && key === voiceKey() && text?.trim()) { const value = text.trim().slice(0, 64); setDraft(value); props.change(value); restoreFocus('search-field'); }
-    } catch { if (!request.signal.aborted) app.notify('Voice search unavailable. Use the keyboard.'); }
-    finally { if (voice === request) { setListening(false); if (!request.signal.aborted && key === voiceKey()) restoreFocus('search-voice'); voice = undefined; } }
-  };
+  onCleanup(() => { clearTimeout(previewTimer); clearTimeout(backdropTimer); });
   let field: FieldHandle | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   createEffect(on(() => [props.query, props.mode] as const, ([value]) => { clearTimeout(timer); setDraft(value); }));
   const change = (value: string) => { setDraft(value); clearTimeout(timer); timer = setTimeout(() => props.change(value.trim().slice(0, 64)), 300); };
@@ -291,11 +279,7 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
     setDraft(query);
     props.change(query);
   };
-  const openKeyboard = () => app.run(async () => {
-    clearTimeout(timer);
-    const value = await app.platform.call<string | null>('input', { label: label(), value: draft(), action: 'search' });
-    if (alive && value !== null) { submit(value); restoreFocus('search-field'); }
-  });
+  const focusField = () => { clearTimeout(timer); field?.focus(); };
   const rightToResults = () => {
     const first = props.titles[0];
     if (first) return restoreFocus(`${props.prefix}:0:${titleKey(first)}`);
@@ -306,14 +290,12 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
   const previewMessage = () => !selected() ? 'Choose a title to see its description.'
     : synopsis() ? '' : !previewMatches() || preview.isFetching ? 'Loading description…'
       : preview.error ? 'Description unavailable.' : 'No description available.';
-  const downToVoice = () => app.host.voice ? restoreFocus('search-voice') : false;
-  let alive = true;
   const keydown = (event: KeyboardEvent) => {
     if (event.target instanceof HTMLInputElement || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || document.querySelector('dialog[open]') || app.inputRequest() || activeScope() !== 'screen') return;
     if (event.key.length === 1 || event.key === 'Backspace') { event.preventDefault(); event.stopImmediatePropagation(); field?.edit(event.key === 'Backspace' ? 'Delete' : event.key); }
   };
   window.addEventListener('keydown', keydown, true);
-  onCleanup(() => { alive = false; clearTimeout(timer); window.removeEventListener('keydown', keydown, true); });
+  onCleanup(() => { clearTimeout(timer); window.removeEventListener('keydown', keydown, true); });
   return <Column width={1728} height={848} gap={24} scroll="none">
     <Row width={1728} height={82} gap={24} onUp={() => restoreFocus('nav-search')}>
       <text skipFocus width={580} height={76} fontSize={54} lineHeight={64} fontFamily="Roboto700" maxLines={1}>Find your next story.</text>
@@ -326,9 +308,8 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
       <Row width={1728} height={742} gap={32}>
         <Column width={400} height={742} gap={20} scroll="none">
           <TextField id="search-field" label={label()} value={draft()} change={change} width={400} maxLength={64} autofocus={!props.restore}
-            activate={openKeyboard} handle={handle => field = handle} up={() => restoreFocus(`search-mode-${props.mode}`)} down={downToVoice} right={rightToResults} submit={() => submit()} />
-          <Show when={app.host.voice}><Button id="search-voice" label={listening() ? 'Listening…' : 'Voice search'} icon="microphone" width={400} disabled={listening()} action={() => void dictate()} /></Show>
-          <Show when={!props.query}><Status width={400} message={props.mode === 'anime' ? 'Search for anime, or use voice search.' : 'Search for a film or TV show, or use voice search.'} /></Show>
+            activate={focusField} handle={handle => field = handle} up={() => restoreFocus(`search-mode-${props.mode}`)} right={rightToResults} submit={() => submit()} />
+          <Show when={!props.query}><Status width={400} message="Use your remote or type a title." /></Show>
           <Show when={selected()} keyed>{title => <view width={400} height={510} color={palette.panelSolid} borderRadius={20}>
             <Column x={20} y={20} width={360} height={470} gap={14} scroll="none">
               <text skipFocus width={360} height={80} fontSize={34} fontFamily="Roboto700" maxLines={2}>{title.name}</text>

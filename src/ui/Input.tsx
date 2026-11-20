@@ -25,7 +25,7 @@ export function TextField(props: { label: string; value: string; change(value: s
     input.addEventListener('compositionend', () => props.change(input!.value));
     input.onkeydown = event => {
       if (event.isComposing) return;
-      if (event.key === 'ArrowDown') { event.preventDefault(); input!.blur(); props.down?.(); }
+      if (event.key === 'ArrowDown' && props.down) { event.preventDefault(); input!.blur(); props.down(); }
       if (event.key === 'ArrowUp' && props.up) { event.preventDefault(); input!.blur(); props.up(); }
       if (event.key === 'ArrowRight' && props.right && input!.selectionStart === input!.value.length && input!.selectionEnd === input!.value.length) {
         event.preventDefault(); input!.blur(); props.right();

@@ -69,23 +69,17 @@ test('pending movie availability cannot hide actor results after leaving Details
   await expect(focused(page)).toHaveText('The Test Series');
   await expect(focused(page)).toBeVisible();
 });
-test('people/studio search and voice dictate current mode; stale results are ignored', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('flixtor-fixture:voice', JSON.stringify({ text: 'Alex Example' })));
-  await home(page); await activate(page, 'Search'); await activate(page, 'People'); await activate(page, 'Voice search');
+test('people and studio search use the inline search field', async ({ page }) => {
+  await home(page); await activate(page, 'Search'); await activate(page, 'People');
+  const field = page.getByRole('textbox', { name: 'Search actors and directors' });
+  await field.focus(); await page.keyboard.type('Alex Example');
   await expect(page).toHaveURL(/mode=people.*q=Alex|q=Alex.*mode=people/);
   await expect(page.getByRole('button', { name: 'Alex Example', exact: true, includeHidden: true })).toBeAttached();
   await activate(page, 'Directed by Alex Example'); await expect(page).toHaveURL(/kind=director/);
   await page.goBack(); await activate(page, 'Studios');
+  const studioField = page.getByRole('textbox', { name: 'Search production studios' });
+  await studioField.focus(); await page.keyboard.type('Example Pictures');
   await expect(page.getByRole('button', { name: 'Example Pictures', exact: true })).toBeAttached();
-  await page.evaluate(() => localStorage.setItem('flixtor-fixture:voice', JSON.stringify({ text: 'stale transcript', delay: 700 })));
-  await activate(page, 'Voice search'); await page.getByRole('button', { name: 'Anime', exact: true }).last().focus(); await page.keyboard.press('Enter');
-  await page.waitForTimeout(850); await expect(page).not.toHaveURL(/stale/); await expect(page).toHaveURL(/mode=anime/);
-});
-test('voice cancellation preserves query and draft', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('flixtor-fixture:voice', JSON.stringify({ text: null })));
-  await home(page); await activate(page, 'Search'); await page.keyboard.type('Northbound');
-  await expect(page).toHaveURL(/q=Northbound/); await activate(page, 'Voice search');
-  await expect(focused(page)).toHaveText('Voice search'); await expect(page).toHaveURL(/q=Northbound/);
 });
 test('Popular Movies retains usable focus when delayed TMDB replaces cached discovery', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));

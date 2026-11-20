@@ -213,16 +213,16 @@ test('search preserves text focus through refresh and supports direct hardware t
   await page.keyboard.press('ArrowDown'); await page.keyboard.type('abc'); await expect(field).toHaveValue('quietabc');
   await expect(page).toHaveURL(/q=quietabc/);
 });
-test('search uses the native keyboard and Right moves from the field to results', async ({ page }) => {
+test('search keeps entry inline and Right moves from the field to results', async ({ page }) => {
   await home(page); await activate(page, 'Search');
   await expect(page.getByRole('button', { name: 'View results' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'A', exact: true })).toHaveCount(0);
   await page.keyboard.press('Enter');
-  const keyboard = page.getByRole('dialog', { name: 'Search films and TV shows' });
-  await expect(keyboard).toBeAttached();
-  await expect(keyboard.getByRole('button', { name: 'Search', exact: true })).toBeAttached();
-  const field = keyboard.getByRole('textbox', { name: 'Search films and TV shows' });
-  await field.fill('north'); await page.keyboard.press('Enter');
+  const field = page.getByRole('textbox', { name: 'Search films and TV shows' });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(field).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Voice search' })).toHaveCount(0);
+  await page.keyboard.type('north'); await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/q=north/);
   await expect(page.getByRole('button', { name: 'The Test Series', exact: true })).toBeAttached();
   await page.keyboard.press('ArrowRight');
