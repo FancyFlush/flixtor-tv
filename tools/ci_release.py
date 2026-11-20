@@ -10,11 +10,16 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 env = os.environ.copy()
-tag = env["GITHUB_REF_NAME"]
-version = tag.removeprefix("v")
-if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-    raise ValueError("Stable release tags must use vMAJOR.MINOR.PATCH")
-version_code = 1000 + int(env["GITHUB_RUN_NUMBER"])
+run_number = int(env["GITHUB_RUN_NUMBER"])
+if env.get("GITHUB_REF") == "refs/heads/main":
+    tag = "main-latest"
+    version = f"1.0.0-main.{run_number}"
+else:
+    tag = env["GITHUB_REF_NAME"]
+    version = tag.removeprefix("v")
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise ValueError("Stable release tags must use vMAJOR.MINOR.PATCH")
+version_code = 1000 + run_number
 env.update(TV_VERSION_NAME=version, TV_VERSION_CODE=str(version_code))
 with tempfile.TemporaryDirectory() as private:
     key = Path(private) / "release.p12"

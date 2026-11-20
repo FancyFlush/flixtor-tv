@@ -80,6 +80,7 @@ class SolidTvIntegrationTest {
         try {
             val web = web(activity.window.decorView)!!
             await("Bridge initialized") { evaluate(web, "typeof nativeHost !== 'undefined'") == "true" }
+            await("Application initialized") { evaluate(web, "!!document.querySelector('canvas')") == "true" }
             evaluate(web, "window.qaReply=null; nativeHost.onmessage=e=>{window.qaReply=JSON.parse(e.data)}; nativeHost.postMessage(JSON.stringify({v:1,id:'probe',method:'storage.get',args:{key:'pin:default'}}))")
             await("Protected storage rejected") { evaluate(web, "window.qaReply?.error==='INVALID'") == "true" }
         } finally { instrument.runOnMainSync { activity.finish() } }
