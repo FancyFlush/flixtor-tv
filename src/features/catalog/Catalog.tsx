@@ -94,6 +94,7 @@ export function Catalog() {
   const heroDetail = createQuery(() => ({ queryKey: ['detail', playableHero() ? titleKey(playableHero()!) : '', app.profileId(), app.authRevision()],
     enabled: destination() === 'home' && !!playableHero(), queryFn: ({ signal }) => playableHero()!.source === 'HIANIME' ? app.anime.detail(playableHero()!, signal) : app.flixtor.detail(playableHero()!, signal), retry: false }));
   createEffect(() => {
+    if (destination() === 'search') return;
     const title = highlighted() || (destination() === 'home' ? heroDetail.data?.title || hero() : titles()[0]);
     app.setStage(title ? { poster: title.poster, backdrop: title.backdrop } : undefined);
   });
@@ -245,10 +246,13 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
   const [selected, setSelected] = createSignal<Title>(), [previewTitle, setPreviewTitle] = createSignal<Title>();
   let voice: AbortController | undefined;
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
+  let backdropTimer: ReturnType<typeof setTimeout> | undefined;
   const selectTitle = (title: Title) => {
     setSelected(title);
     clearTimeout(previewTimer);
+    clearTimeout(backdropTimer);
     previewTimer = setTimeout(() => setPreviewTitle(title), 250);
+    backdropTimer = setTimeout(() => app.setStage(title), 500);
   };
   const preview = createQuery(() => ({
     queryKey: ['detail', previewTitle() ? titleKey(previewTitle()!) : '', app.profileId(), app.authRevision()],
@@ -259,12 +263,15 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
   }));
   createEffect(on(() => [props.query, props.titles[0]] as const, ([query, first]) => {
     clearTimeout(previewTimer);
-    if (!query || !first) { setSelected(undefined); setPreviewTitle(undefined); }
+    if (!query || !first) {
+      clearTimeout(backdropTimer);
+      setSelected(undefined); setPreviewTitle(undefined); app.setStage(undefined);
+    }
     else selectTitle(first);
   }));
   const voiceKey = () => JSON.stringify([props.mode, app.profileId(), location.pathname, draft()]);
   createEffect(on(() => [props.mode, app.profileId(), location.pathname, props.query], () => { voice?.abort(); setListening(false); }));
-  onCleanup(() => { voice?.abort(); clearTimeout(previewTimer); });
+  onCleanup(() => { voice?.abort(); clearTimeout(previewTimer); clearTimeout(backdropTimer); });
   const dictate = async () => {
     if (listening()) return;
     clearTimeout(timer); const key = voiceKey(), request = new AbortController(); voice = request; setListening(true);
@@ -322,18 +329,20 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
             activate={openKeyboard} handle={handle => field = handle} up={() => restoreFocus(`search-mode-${props.mode}`)} down={downToVoice} right={rightToResults} submit={() => submit()} />
           <Show when={app.host.voice}><Button id="search-voice" label={listening() ? 'Listening…' : 'Voice search'} icon="microphone" width={400} disabled={listening()} action={() => void dictate()} /></Show>
           <Show when={!props.query}><Status width={400} message={props.mode === 'anime' ? 'Search for anime, or use voice search.' : 'Search for a film or TV show, or use voice search.'} /></Show>
-          <Show when={selected()} keyed>{title => <Column width={400} height={510} gap={14} scroll="none">
-            <text skipFocus width={400} height={80} fontSize={34} fontFamily="Roboto700" maxLines={2}>{title.name}</text>
-            <text skipFocus width={400} height={36} fontSize={22} color={palette.muted} maxLines={1}>{[title.year, title.rating ? `Rating ${title.rating}` : '', title.genres].filter(Boolean).join('   ·   ')}</text>
-            <Show when={synopsis()}><text skipFocus width={400} height={310} fontSize={24} color={palette.muted} maxLines={8}>{synopsis()}</text></Show>
-            <Show when={previewMessage()}><Status width={400} message={previewMessage()} /></Show>
-          </Column>}</Show>
+          <Show when={selected()} keyed>{title => <view width={400} height={510} color={palette.panelSolid} borderRadius={20}>
+            <Column x={20} y={20} width={360} height={470} gap={14} scroll="none">
+              <text skipFocus width={360} height={80} fontSize={34} fontFamily="Roboto700" maxLines={2}>{title.name}</text>
+              <text skipFocus width={360} height={36} fontSize={22} color={palette.muted} maxLines={1}>{[title.year, title.rating ? `Rating ${title.rating}` : '', title.genres].filter(Boolean).join('   ·   ')}</text>
+              <Show when={synopsis()}><text skipFocus width={360} height={310} fontSize={24} color={palette.foreground} maxLines={8}>{synopsis()}</text></Show>
+              <Show when={previewMessage()}><Status width={360} message={previewMessage()} /></Show>
+            </Column>
+          </view>}</Show>
         </Column>
         <Column width={1296} height={742} gap={16} scroll="none" onLeft={() => restoreFocus('search-field')}>
           <Show when={props.pending}><Status width={1296} message="Searching…" /></Show>
           <Show when={['media', 'anime'].includes(props.mode) && props.query && !props.pending && !props.error && !props.titles.length}><Status width={1296} message={`No results for “${props.query}”. Try a different title.`} /></Show>
           <Show when={props.mode === 'people' || props.mode === 'studios' ? props.prefix : undefined} keyed>{prefix => <EntityResults kind={props.mode as 'people' | 'studios'} query={props.query} prefix={prefix} width={1296} firstFocus={setFirstEntityFocus} />}</Show>
-          <Show when={props.prefix} keyed>{prefix => <Show when={props.titles.length}><TitleGrid titles={props.titles} prefix={prefix} columns={6} width={1296} height={722} initial={props.initial} autofocus={props.restore} landscape compact focus={(title, index) => { selectTitle(title); props.focus(title, index); }} open={props.open} end={props.end} /></Show>}</Show>
+          <Show when={props.prefix} keyed>{prefix => <Show when={props.titles.length}><TitleGrid titles={props.titles} prefix={prefix} columns={6} width={1296} height={722} initial={props.initial} autofocus={props.restore} compact focus={(title, index) => { selectTitle(title); props.focus(title, index); }} open={props.open} end={props.end} /></Show>}</Show>
         </Column>
       </Row>
     </view>

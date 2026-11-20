@@ -104,7 +104,7 @@ for (const height of [1080, 720]) {
     }
     await expect.poll(async () => {
       const input = await field.boundingBox(), poster = await focused(page).boundingBox();
-      return !!input && !!poster && poster.x >= input.x + input.width && poster.height < 180;
+      return !!input && !!poster && poster.x >= input.x + input.width && poster.height > poster.width * 1.3;
     }).toBe(true);
     const heading = await page.evaluate(async () => {
       const path = '/src/ui/focus.ts'; const { activeElement, nodeRect } = await import(path);
