@@ -228,7 +228,7 @@ test('search uses the native keyboard and Right moves from the field to results'
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('button[data-focused="true"]')).toHaveText('The Test Series');
   const bounds = await page.getByRole('button', { name: 'The Test Series', exact: true }).boundingBox();
-  expect(bounds).not.toBeNull(); expect(bounds!.height).toBeLessThan(180);
+  expect(bounds).not.toBeNull(); expect(bounds!.height).toBeGreaterThan(bounds!.width * 1.3);
 });
 test('screen-fit Cancel discards draft and Save persists it', async ({ page }) => {
   await home(page); await activate(page, 'Settings'); await activate(page, 'Display'); await activate(page, /Display, Adjust screen fit/);
