@@ -86,7 +86,7 @@ test('anime search cancels obsolete results and handles empty, error, retry, and
   await field.fill('broken'); await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeAttached();
   await page.evaluate(() => localStorage.setItem('flixtor-fixture:httpOverrides', '{}'));
   await activate(page, 'Try again'); await expect(page.getByRole('button', { name: 'Anime fixture 1', exact: true })).toBeAttached();
-  await field.fill(''); await expect(page.locator('#status')).toContainText('Search for anime, or use voice search.');
+  await field.fill(''); await expect(page.locator('#status')).toContainText('Use your remote or type a title.');
   await expect(page.getByRole('button', { name: 'Anime fixture 1', exact: true })).toHaveCount(0);
 });
 
