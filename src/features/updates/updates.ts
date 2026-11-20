@@ -29,13 +29,17 @@ export function createUpdates(platform: Platform, host: HostInfo) {
     const result = await json(asset.browser_download_url) as unknown as Release;
     if (!Number.isInteger(result.versionCode) || result.versionCode < 1 || !Number.isInteger(result.minSdk) || result.minSdk < 29 ||
       !result.versionName || result.versionName.length > 64 || !/^[a-f\d]{64}$/i.test(result.sha256) ||
-      !result.apkUrl?.startsWith('https://github.com/FancyFlush/flixtor-tv/releases/download/')) throw new Error('Invalid release metadata');
+      !result.apkUrl?.startsWith('https://github.com/FancyFlush/flixtor-tv/releases/download/') ||
+      !/\/(?:flixtor|app-release)\.apk$/.test(result.apkUrl)) throw new Error('Invalid release metadata');
     return result;
   }
   async function check(fingerprint?: string) {
     if (working) return; working = true; const request = ++generation; set({ phase: 'checking', error: undefined });
     try {
-      const [stableRelease, mainLatest] = await Promise.all([json(REPO), optionalJson(MAIN_REPO)]);
+      const [stableRelease, mainLatest] = await Promise.all([
+        json(REPO),
+        optionalJson(MAIN_REPO).catch(() => undefined),
+      ]);
       const candidates = [await release(stableRelease, false)];
       if (mainLatest) candidates.push(await release(mainLatest, true));
       const latestRelease = candidates.reduce((latest, candidate) => candidate.versionCode > latest.versionCode ? candidate : latest);

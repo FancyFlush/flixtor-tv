@@ -20,7 +20,7 @@ export function BrowseShelves(props: {
   const app = useApp(), navigate = useNavigate();
   const shelves: CatalogShelf[] = browseCategories(props.destination, props.sort, props.query).filter(c => !props.full || c.id === props.full).map(category => {
     const query = createInfiniteQuery(() => ({
-      queryKey: shelfQueryKey(props.destination, category.id, props.query, app.profileId(), app.authRevision()),
+      queryKey: shelfQueryKey(props.destination, category.id, props.query, app.profileId(), app.authRevision(), app.data.animeBaseUrl),
       initialPageParam: 1, maxPages: 8,
       queryFn: ({ pageParam, signal }) => props.destination === 'anime'
         ? category.id === 'search' ? app.anime.browse(props.query.trim(), pageParam, signal) : app.anime.category(category.id as AnimeCategory, pageParam, signal)

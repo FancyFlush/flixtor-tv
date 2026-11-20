@@ -1,12 +1,20 @@
 import type { Platform } from '../platform/platform';
-import { playbackKey, titleKey, validSegment, type Profile, type Segment, type Title, type Viewing } from './models';
+import { playbackKey, titleKey, validSegment, type Profile, type Segment, type SubtitleAppearance, type SubtitleSize, type Title, type Viewing, type VideoFit } from './models';
+import { DEFAULT_ANIME_BASE, normalizeAnimeBaseUrl } from '../services/anime';
 export interface Library { favorites: Title[]; viewing: Viewing[] }
-export interface AppData { schema: 1; profiles: Profile[]; libraries: Record<string, Library>; skip: Record<string, string>; fit: { horizontal: number; vertical: number }; searchPosterSize: 'small' | 'medium' | 'large' }
-const defaultProfile = (): Profile => ({ id: 'default', name: 'My profile', avatar: 0, quality: 0, autoplay: true, largerBuffer: false, locked: false });
+export interface AppData { schema: 1; profiles: Profile[]; libraries: Record<string, Library>; skip: Record<string, string>; fit: { horizontal: number; vertical: number }; searchPosterSize: 'small' | 'medium' | 'large'; animeBaseUrl: string }
+const defaultProfile = (): Profile => ({ id: 'default', name: 'My profile', avatar: 0, quality: 0, autoplay: true, largerBuffer: false, locked: false, subtitleSize: 'medium', subtitleAppearance: 'shadow', subtitleDelay: 0, videoFit: 'native' });
+function normalizeProfile(profile: Profile): Profile {
+  const size: SubtitleSize = ['small', 'medium', 'large'].includes(profile.subtitleSize || '') ? profile.subtitleSize! : 'medium';
+  const appearance: SubtitleAppearance = ['shadow', 'outline', 'boxed'].includes(profile.subtitleAppearance || '') ? profile.subtitleAppearance! : 'shadow';
+  const videoFit: VideoFit = profile.videoFit === 'fill' ? 'fill' : 'native';
+  const delay = Number.isFinite(profile.subtitleDelay) ? Math.max(-5000, Math.min(5000, Math.round(profile.subtitleDelay! / 100) * 100)) : 0;
+  return { ...defaultProfile(), ...profile, subtitleSize: size, subtitleAppearance: appearance, subtitleDelay: delay, videoFit };
+}
 function parse<T>(raw: unknown, fallback: T): T { try { return typeof raw === 'string' ? JSON.parse(raw) : fallback; } catch { return fallback; } }
 export function importLegacy(legacy: Record<string, unknown>): AppData {
   const old = Array.isArray(legacy.profiles) && legacy.profiles.length ? legacy.profiles as Profile[] : [defaultProfile()];
-  const profiles = old.slice(0, 7).map(p => ({ ...defaultProfile(), id: p.id, name: p.name, avatar: p.avatar ?? 0, quality: p.quality ?? 0, autoplay: p.autoplay ?? true, largerBuffer: p.largerBuffer ?? false, locked: p.locked ?? false }));
+  const profiles = old.slice(0, 7).map(p => normalizeProfile({ ...defaultProfile(), ...p, id: p.id, name: p.name, avatar: p.avatar ?? 0, quality: p.quality ?? 0, autoplay: p.autoplay ?? true, largerBuffer: p.largerBuffer ?? false, locked: p.locked ?? false }));
   const libraries: Record<string, Library> = {};
   for (const p of profiles) {
     const value = legacy[`library:${p.id}`] as Library | undefined;
@@ -15,7 +23,7 @@ export function importLegacy(legacy: Record<string, unknown>): AppData {
       viewing: (value?.viewing ?? (p.id === 'default' ? parse<Viewing[]>(original?.viewing, []) : [])).slice(0, 100) };
   }
   const fit = legacy.screen_fit as { horizontal?: number; vertical?: number } | undefined;
-  return { schema: 1, profiles, libraries, skip: (legacy.skip || {}) as Record<string, string>, fit: { horizontal: Math.min(10, Math.max(0, fit?.horizontal ?? 5)), vertical: Math.min(10, Math.max(0, fit?.vertical ?? 5)) }, searchPosterSize: 'medium' };
+  return { schema: 1, profiles, libraries, skip: (legacy.skip || {}) as Record<string, string>, fit: { horizontal: Math.min(10, Math.max(0, fit?.horizontal ?? 5)), vertical: Math.min(10, Math.max(0, fit?.vertical ?? 5)) }, searchPosterSize: 'medium', animeBaseUrl: DEFAULT_ANIME_BASE };
 }
 export class Repository {
   private data!: AppData; private queue: Promise<void> = Promise.resolve();
@@ -28,6 +36,8 @@ export class Repository {
       const value = JSON.parse(raw) as AppData;
       if (value.schema !== 1 || !Array.isArray(value.profiles) || !value.profiles.length || !value.libraries || !value.skip) throw new Error('Stored data needs recovery. Original data retained.');
       if (!['small', 'medium', 'large'].includes(value.searchPosterSize)) value.searchPosterSize = 'medium';
+      value.animeBaseUrl = normalizeAnimeBaseUrl(value.animeBaseUrl || DEFAULT_ANIME_BASE);
+      value.profiles = value.profiles.map(normalizeProfile);
       this.data = value;
     } else {
       const legacy = await this.platform.call<Record<string, unknown>>('legacy');
@@ -60,7 +70,7 @@ export class Repository {
       else { if (d.profiles.length >= 7) throw new Error('Maximum seven profiles'); const p = { ...defaultProfile(), id: crypto.randomUUID(), name, avatar }; d.profiles.push(p); d.libraries[p.id] = { favorites: [], viewing: [] }; }
     });
   }
-  updateProfile(id: string, value: Partial<Pick<Profile, 'quality' | 'autoplay' | 'largerBuffer' | 'locked'>>) {
+  updateProfile(id: string, value: Partial<Pick<Profile, 'quality' | 'autoplay' | 'largerBuffer' | 'locked' | 'subtitleSize' | 'subtitleAppearance' | 'subtitleDelay' | 'videoFit'>>) {
     return this.change(d => { const p = d.profiles.find(p => p.id === id); if (!p) throw new Error('Profile unavailable'); Object.assign(p, value); });
   }
   async setPin(id: string, pin: string) { if (pin && !/^\d{4}$/.test(pin)) throw new Error('PIN must contain four digits.'); await this.change(d => { const p = d.profiles.find(p => p.id === id); if (!p) throw new Error('Profile unavailable'); p.locked = !!pin; }, { profile: id, pin }); }
@@ -74,5 +84,6 @@ export class Repository {
   customTypes(): { id: string; label: string }[] { return parse(this.data.skip.customTypes, []); }
   customType(label: string) { label = label.trim(); if (!label || label.length > 30) return Promise.reject(new Error('Name is required.')); return this.change(d => { const types = parse<{ id: string; label: string }[]>(d.skip.customTypes, []); if (types.length >= 50) throw new Error('Maximum 50 custom types'); if (!types.some(t => t.label.toLowerCase() === label.toLowerCase())) types.push({ id: crypto.randomUUID(), label }); d.skip.customTypes = JSON.stringify(types); }); }
   setSkip(key: string, value?: string) { return this.change(d => { if (value === undefined) delete d.skip[key]; else d.skip[key] = value; }); }
+  async setAnimeBaseUrl(value: string) { const animeBaseUrl = normalizeAnimeBaseUrl(value); await this.change(d => { d.animeBaseUrl = animeBaseUrl; }); }
   clearLibrary(id: string) { return this.change(d => { d.libraries[id] = { favorites: [], viewing: [] }; }); }
 }

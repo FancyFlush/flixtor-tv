@@ -48,8 +48,9 @@ export function PlayerPage() {
     const menu = state.menu;
     if (menu === 'settings') return [
       { id: 'quality', label: 'Video quality', value: profile().quality ? `${profile().quality}p maximum` : 'Auto', action: () => player.menu('quality') },
+      { id: 'video-fit', label: 'Video fit', value: profile().videoFit === 'fill' ? 'Fill screen' : 'Native aspect ratio', action: () => player.menu('video-fit') },
       { id: 'audio', label: 'Audio', action: () => player.menu('audio') },
-      { id: 'subtitles', label: 'Subtitles', action: () => player.menu('subtitles') },
+      { id: 'subtitles', label: 'Subtitles', action: () => player.menu('subtitle-settings') },
       { id: 'autoplay', label: 'Autoplay', value: profile().autoplay ? 'On' : 'Off', action: () => run(() => app.repo.updateProfile(profile().id, { autoplay: !profile().autoplay })) },
       { id: 'buffer', label: 'Larger buffer', value: profile().largerBuffer ? 'On' : 'Off', action: () => run(async () => { const enabled = !profile().largerBuffer; await app.repo.updateProfile(profile().id, { largerBuffer: enabled }); await player.command('buffer', { enabled }); }) },
       { id: 'skip', label: 'Skip segments', action: () => player.menu('skip') },
@@ -57,10 +58,56 @@ export function PlayerPage() {
       { id: 'close', label: 'Close settings', action: () => player.menu('') },
     ];
     if (menu === 'quality') return [0, 720, 1080, 2160].map(height => ({ id: String(height), label: height ? `${height}p maximum` : 'Auto', selected: profile().quality === height, action: () => run(async () => { await app.repo.updateProfile(profile().id, { quality: height }); await player.command('quality', { height }); player.menu('settings'); }) }));
-    if (menu === 'audio' || menu === 'subtitles') {
+    if (menu === 'video-fit') return [
+      { id: 'fill', label: 'Fill screen', selected: profile().videoFit === 'fill', action: () => run(async () => { await app.repo.updateProfile(profile().id, { videoFit: 'fill' }); await player.command('video-fit', { fit: 'fill' }); player.menu('settings'); }) },
+      { id: 'native', label: 'Native aspect ratio', selected: profile().videoFit !== 'fill', action: () => run(async () => { await app.repo.updateProfile(profile().id, { videoFit: 'native' }); await player.command('video-fit', { fit: 'native' }); player.menu('settings'); }) },
+    ];
+    if (menu === 'subtitle-settings') {
+      const delay = profile().subtitleDelay ?? 0;
+      const delayLabel = delay === 0 ? 'On time' : `${Math.abs(delay / 1000).toFixed(1)}s ${delay > 0 ? 'late' : 'early'}`;
+      return [
+        { id: 'track', label: 'Subtitle track', action: () => player.menu('subtitle-tracks') },
+        { id: 'size', label: 'Text size', value: ({ small: 'Small', medium: 'Medium', large: 'Large' }[profile().subtitleSize ?? 'medium']), action: () => player.menu('subtitle-size') },
+        { id: 'appearance', label: 'Appearance', value: ({ shadow: 'Shadow', outline: 'Outline', boxed: 'Boxed' }[profile().subtitleAppearance ?? 'shadow']), action: () => player.menu('subtitle-appearance') },
+        { id: 'sync', label: 'Subtitle sync', value: delayLabel, action: () => player.menu('subtitle-sync') },
+        { id: 'back', label: 'Back to settings', action: () => player.menu('settings') },
+      ];
+    }
+    if (menu === 'audio' || menu === 'subtitle-tracks') {
       const type = menu === 'audio' ? 1 : 3;
-      return [{ id: 'auto', label: type === 1 ? 'Auto' : 'Off', action: () => run(async () => { await player.command('track', { type, track: type === 1 ? 'auto' : 'off' }); player.menu('settings'); }) },
-        ...(e()?.tracks.filter(t => t.type === type).map(t => ({ id: t.id, label: t.label, disabled: !t.supported, selected: t.selected, action: () => run(async () => { await player.command('track', { type, track: t.id }); player.menu('settings'); }) })) || [])];
+      const returnTo = menu === 'audio' ? 'settings' : 'subtitle-settings';
+      return [{ id: 'auto', label: type === 1 ? 'Auto' : 'Off', action: () => run(async () => { await player.command('track', { type, track: type === 1 ? 'auto' : 'off' }); player.menu(returnTo); }) },
+        ...(e()?.tracks.filter(t => t.type === type).map(t => ({ id: t.id, label: t.label, disabled: !t.supported, selected: t.selected, action: () => run(async () => { await player.command('track', { type, track: t.id }); player.menu(returnTo); }) })) || [])];
+    }
+    if (menu === 'subtitle-size') return (['small', 'medium', 'large'] as const).map(size => ({ id: size, label: size[0].toUpperCase() + size.slice(1), selected: profile().subtitleSize === size, action: () => run(async () => {
+      await app.repo.updateProfile(profile().id, { subtitleSize: size });
+      await player.command('caption-style', { size, appearance: profile().subtitleAppearance ?? 'shadow', delay: profile().subtitleDelay ?? 0 });
+      player.menu('subtitle-settings');
+    }) }));
+    if (menu === 'subtitle-appearance') return (['shadow', 'outline', 'boxed'] as const).map(appearance => ({ id: appearance, label: appearance[0].toUpperCase() + appearance.slice(1), selected: profile().subtitleAppearance === appearance, action: () => run(async () => {
+      await app.repo.updateProfile(profile().id, { subtitleAppearance: appearance });
+      await player.command('caption-style', { size: profile().subtitleSize ?? 'medium', appearance, delay: profile().subtitleDelay ?? 0 });
+      player.menu('subtitle-settings');
+    }) }));
+    if (menu === 'subtitle-sync') {
+      const delay = profile().subtitleDelay ?? 0;
+      return [
+        { id: 'earlier', label: 'Earlier by 0.1 seconds', disabled: delay <= -5000, action: () => run(async () => {
+          const next = Math.max(-5000, delay - 100);
+          await app.repo.updateProfile(profile().id, { subtitleDelay: next });
+          await player.command('caption-style', { size: profile().subtitleSize ?? 'medium', appearance: profile().subtitleAppearance ?? 'shadow', delay: next });
+        }) },
+        { id: 'later', label: 'Later by 0.1 seconds', disabled: delay >= 5000, action: () => run(async () => {
+          const next = Math.min(5000, delay + 100);
+          await app.repo.updateProfile(profile().id, { subtitleDelay: next });
+          await player.command('caption-style', { size: profile().subtitleSize ?? 'medium', appearance: profile().subtitleAppearance ?? 'shadow', delay: next });
+        }) },
+        { id: 'reset', label: 'Reset sync', disabled: delay === 0, action: () => run(async () => {
+          await app.repo.updateProfile(profile().id, { subtitleDelay: 0 });
+          await player.command('caption-style', { size: profile().subtitleSize ?? 'medium', appearance: profile().subtitleAppearance ?? 'shadow', delay: 0 });
+        }) },
+        { id: 'back', label: 'Back to subtitle settings', action: () => player.menu('subtitle-settings') },
+      ];
     }
     if (menu === 'episodes') return orderedEpisodes(state.detail?.episodes || []).map(episode => ({ id: episodeKey(episode), label: `${episode.season}.${episode.displayNumber || episode.number}  ${episode.name}`, selected: episodeKey(episode) === episodeKey(state.episode), action: () => run(() => player.start(state.detail!, episode)) }));
     if (menu === 'seasons') return [...new Set(orderedEpisodes(state.detail?.episodes || []).map(episode => episode.season))].map(season => ({ id: String(season), label: `Season ${season}`, selected: season === episodeSeason(), action: () => { setEpisodeSeason(season); player.menu('episodes'); } }));
@@ -101,7 +148,12 @@ export function PlayerPage() {
     return [];
   };
   const activeSegment = () => state.regions.filter(s => s.start <= (e()?.position || 0) && (e()?.position || 0) < s.end && s.end <= (e()?.duration || 0) && player.effectiveAction(s) === 'ASK').at(-1);
-  const back = () => { if (draft()) closeEditor(); else player.menu(state.menu === 'settings' || state.menu === 'episodes' ? '' : state.menu === 'seasons' ? 'episodes' : state.menu === 'skip-actions' ? 'skip' : 'settings'); };
+  const back = () => {
+    if (draft()) { closeEditor(); return; }
+    const menu = state.menu;
+    player.menu(['settings', 'episodes'].includes(menu) ? '' : menu === 'seasons' ? 'episodes' : menu === 'skip-actions' ? 'skip'
+      : ['subtitle-size', 'subtitle-appearance', 'subtitle-sync', 'subtitle-tracks'].includes(menu) ? 'subtitle-settings' : 'settings');
+  };
   const backKey = Symbol('player'); app.backHandlers.set(backKey, () => { if (draft()) { closeEditor(); return true; } return false; });
   onCleanup(() => { app.backHandlers.delete(backKey); if (draft()) editorResume = false; void player.cancel().catch(() => {}); });
   const transportVisible = createMemo(() => !state.menu && state.controls && !!state.event && !state.error && !state.chooser && state.stillWatching === undefined && !state.bufferAhead);
@@ -152,14 +204,20 @@ export function PlayerPage() {
           <view width={safeWidth()} height={100} forwardFocus={1}><Glass width={Math.min(safeWidth(), 960)} height={96} radius={48} />
             <Row x={16} y={14} width={Math.min(safeWidth(), 960) - 32} height={68} gap={18}>
               <Button label={e()?.playing ? 'Pause' : 'Play'} icon={e()?.playing ? 'pause' : 'play'} iconOnly primary width={76} action={() => run(() => player.command(e()?.playing ? 'pause' : 'play'))} />
-              <Button label="−10 seconds" icon="rewind" iconOnly width={76} quiet action={() => run(() => player.command('seek', { position: Math.max(0, e()!.position - 10_000) }))} />
-              <Button label="+10 seconds" icon="forward" iconOnly width={76} quiet action={() => run(() => player.command('seek', { position: Math.min(e()!.duration, e()!.position + 10_000) }))} />
+              <Button label="−1 minute" icon="rewind" iconOnly width={76} quiet holdSeek={-1} action={() => run(() => player.seekBy(-60_000))} />
+              <Button label="+1 minute" icon="forward" iconOnly width={76} quiet holdSeek={1} action={() => run(() => player.seekBy(60_000))} />
               <Show when={state.detail?.episodes.length}><Button label="Episodes" id="player-episodes" icon="episodes" width={210} quiet action={() => player.menu('episodes')} /></Show>
               <Button label="Settings" id="player-settings" icon="settings" width={210} quiet action={() => player.menu('settings')} />
               <Show when={player.next()}><Button label="Next episode" icon="forward" iconOnly width={76} quiet action={() => run(player.nextEpisode)} /></Show>
             </Row>
           </view>
         </Column>
+      </Show>
+      <Show when={state.seekHud && !state.controls && !state.menu}>
+        <view skipFocus y={850} width={1920} height={230} color={0x00000000} linearGradient={{ colors: [0x00000000, 0x080c14ee], stops: [0, 1], angle: 0 }} />
+        <view skipFocus x={safeX()} y={1080 - safeY() - 112} width={safeWidth()} height={96}>
+          <Timeline width={safeWidth()} displayOnly />
+        </view>
       </Show>
       <Show when={!state.menu && !draft() && state.preview === undefined}>
         <view x={Math.max(safeX(), 1920 - safeX() - 590)} y={1080 - safeY() - (state.controls ? 430 : 160)} width={590} height={120}

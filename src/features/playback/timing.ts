@@ -37,3 +37,4 @@ export class Countdown {
   }
 }
 export function timelineStep(base: number, held: number, repeat: number, duration: number) { if (!repeat) return base; return held >= 5000 ? Math.max(base * 30, Math.min(duration / 20, 600_000)) : held >= 3000 ? base * 18 : held >= 1500 ? base * 6 : held >= 500 ? base * 3 : base; }
+export function remoteSeek(position: number, duration: number, delta: number) { return Math.max(0, Math.min(duration > 0 ? duration : Infinity, position + delta)); }

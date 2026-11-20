@@ -17,6 +17,7 @@ import { MetadataSections } from './Discovery';
 export function DetailPage() {
   const app = useApp(), navigate = useNavigate(); const [params] = useSearchParams();
   const [season, setSeason] = createSignal<number>(), [seasonMenu, setSeasonMenu] = createSignal(false), [saving, setSaving] = createSignal(false);
+  const [highlightedEpisode, setHighlightedEpisode] = createSignal<Episode>();
   const [entered, setEntered] = createSignal(false); let entrance = 0;
   onMount(() => { entrance = requestAnimationFrame(() => setEntered(true)); });
   onCleanup(() => cancelAnimationFrame(entrance));
@@ -34,7 +35,13 @@ export function DetailPage() {
     enabled: !originalTitle() && !!meta(), retry: false,
     queryFn: async ({ signal }) => matchMovie(meta()!.title, await app.flixtor.search(meta()!.title.name, 1, signal)) || null }));
   const title = () => originalTitle() || (availability.isSuccess ? availability.data : undefined) || undefined;
-  const query = createQuery(() => ({ queryKey: ['detail', title() ? titleKey(title()!) : params.title || `tmdb:${params.tmdb || params.imdb || ''}`, app.profileId(), app.authRevision()], enabled: !!title(), queryFn: ({ signal }) => title()!.source === 'HIANIME' ? app.anime.detail(title()!, signal) : app.flixtor.detail(title()!, signal) }));
+  const episodeInfoQuery = createQuery(() => {
+    const selectedEpisode = highlightedEpisode(), selectedTitle = title();
+    return { queryKey: ['episode-info', selectedTitle ? titleKey(selectedTitle) : '', selectedEpisode?.season, selectedEpisode?.number],
+      enabled: !!selectedTitle && selectedTitle.source !== 'HIANIME' && !!selectedEpisode, staleTime: METADATA_TTL, retry: false,
+      queryFn: ({ signal }) => app.flixtor.episodeInfo(selectedTitle!, selectedEpisode!, signal) };
+  });
+  const query = createQuery(() => ({ queryKey: ['detail', title() ? titleKey(title()!) : params.title || `tmdb:${params.tmdb || params.imdb || ''}`, app.profileId(), app.authRevision(), ...(title()?.source === 'HIANIME' ? [app.data.animeBaseUrl] : [])], enabled: !!title(), queryFn: ({ signal }) => title()!.source === 'HIANIME' ? app.anime.detail(title()!, signal) : app.flixtor.detail(title()!, signal) }));
   const detail = () => query.isSuccess ? query.data : undefined;
   const displayTitle = () => detail()?.title || title() || meta()?.title;
   narratePage(() => displayTitle()?.name || 'Title details', () => displayTitle()?.synopsis || '');
@@ -70,8 +77,20 @@ export function DetailPage() {
         <Row width={1728} height={68} gap={30}><text skipFocus width={900} height={54} fontSize={38} fontFamily="Roboto700">Episodes</text>
           <Button label={`Season ${currentSeason()}`} width={240} selected action={() => setSeasonMenu(true)} />
         </Row>
-        <Show when={currentSeason()} keyed>{current => <EpisodeList title={title()!} episodes={episodes().filter(e => e.season === current)} width={1450} height={530}
-          viewing={app.data.libraries[app.profileId()]?.viewing || []} initial={season() === undefined ? initial() : undefined} autofocus={season() !== undefined} play={episode => start(episode)} />}</Show>
+        <Show when={currentSeason()} keyed>{current => <Row width={1728} height={530} gap={28} selected={1}>
+          <Column skipFocus width={590} height={530} gap={16} scroll="none">
+            <text skipFocus width={570} height={70} fontSize={36} fontFamily="Roboto700" maxLines={2}>{episodeInfoQuery.data?.name || highlightedEpisode()?.name || 'Select an episode'}</text>
+            <text skipFocus width={570} height={36} fontSize={24} color={palette.muted}>{highlightedEpisode() ? `Season ${highlightedEpisode()!.season} · Episode ${highlightedEpisode()!.displayNumber || highlightedEpisode()!.number}` : ''}</text>
+            <text skipFocus width={570} height={58} fontSize={22} color={palette.muted} maxLines={2}>{[
+              episodeInfoQuery.data?.airDate, episodeInfoQuery.data?.rating ? `★ ${episodeInfoQuery.data.rating}${episodeInfoQuery.data.votes ? ` (${episodeInfoQuery.data.votes} votes)` : ''}` : '',
+              episodeInfoQuery.data?.contentRating, episodeInfoQuery.data?.country, episodeInfoQuery.data?.language,
+            ].filter(Boolean).join(' · ')}</text>
+            <text skipFocus width={570} height={250} fontSize={25} color={palette.muted} maxLines={8}>{episodeInfoQuery.data?.synopsis || (episodeInfoQuery.isFetching ? 'Loading episode details…' : episodeInfoQuery.error ? 'Episode details are unavailable. The episode list is still ready to use.' : title()?.source === 'HIANIME' ? 'Episode descriptions are not available for this source.' : '')}</text>
+          </Column>
+          <EpisodeList title={title()!} episodes={episodes().filter(e => e.season === current)} width={1110} height={530}
+            viewing={app.data.libraries[app.profileId()]?.viewing || []} initial={season() === undefined ? initial() : undefined} autofocus={season() !== undefined}
+            onHighlight={setHighlightedEpisode} play={episode => start(episode)} />
+        </Row>}</Show>
       </Column></Show>
       <Show when={meta()}>{data => <MetadataSections metadata={data()} />}</Show>
       <Show when={identified.error || metadata.error}><Row width={1728} height={80} gap={20}><Status width={1100} message="Cast and related movies could not load." /><Button label="Retry discovery" action={() => { if (identified.error) void identified.refetch(); else void metadata.refetch(); }} /></Row></Show>

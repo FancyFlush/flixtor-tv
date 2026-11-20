@@ -41,7 +41,7 @@ if defined JAVA_HOME goto findJavaFromJavaHome
 
 set JAVA_EXE=java.exe
 %JAVA_EXE% -version >NUL 2>&1
-if %ERRORLEVEL% equ 0 goto execute
+if %ERRORLEVEL% equ 0 goto checkJavaVersion
 
 echo. 1>&2
 echo ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH. 1>&2
@@ -55,7 +55,7 @@ goto fail
 set JAVA_HOME=%JAVA_HOME:"=%
 set JAVA_EXE=%JAVA_HOME%/bin/java.exe
 
-if exist "%JAVA_EXE%" goto execute
+if exist "%JAVA_EXE%" goto checkJavaVersion
 
 echo. 1>&2
 echo ERROR: JAVA_HOME is set to an invalid directory: %JAVA_HOME% 1>&2
@@ -63,6 +63,28 @@ echo. 1>&2
 echo Please set the JAVA_HOME variable in your environment to match the 1>&2
 echo location of your Java installation. 1>&2
 
+goto fail
+
+:checkJavaVersion
+if defined JAVA_HOME_17 set "JAVA_EXE_17=%JAVA_HOME_17%\bin\java.exe"
+
+for /f "tokens=3" %%V in ('"%JAVA_EXE%" -version 2^>^&1 ^| findstr /I "version"') do set "JAVA_VERSION=%%~V"
+if "%JAVA_VERSION:~0,3%"=="17." goto execute
+
+set "JDK17_HOME="
+if defined JAVA_HOME_17 if exist "%JAVA_HOME_17%\bin\java.exe" set "JDK17_HOME=%JAVA_HOME_17%"
+if not defined JDK17_HOME for /d %%I in ("%USERPROFILE%\scoop\apps\openjdk17*" "%ProgramFiles%\Microsoft\jdk-17*" "%ProgramFiles%\Eclipse Adoptium\jdk-17*") do if exist "%%~I\bin\java.exe" set "JDK17_HOME=%%~I"
+
+if defined JDK17_HOME (
+    set "JAVA_HOME=%JDK17_HOME%"
+    set "JAVA_EXE=%JDK17_HOME%\bin\java.exe"
+    goto execute
+)
+
+echo. 1>&2
+echo ERROR: Flixtor TV requires JDK 17 to run Gradle 8.7. 1>&2
+echo Install JDK 17 and set JAVA_HOME or JAVA_HOME_17 to it. 1>&2
+echo JDK 25 is not supported by this build. 1>&2
 goto fail
 
 :execute

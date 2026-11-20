@@ -48,7 +48,7 @@ it('uses upstream data, keeps cookies scoped and isolates browser sessions', asy
     expect(JSON.stringify(response.json)).not.toContain('live-secret');
     await b.call('http', { client: 'flixtor', url: 'https://flixtor.to/account' }, b.cookie);
     expect(upstream.mock.calls[1][1].headers.Cookie).toBe('session=live-secret');
-    await b.call('http', { client: 'anime', url: 'https://hianime.at/most-popular' }, b.cookie);
+    await b.call('http', { client: 'anime', url: 'https://hianime.fm/most-popular' }, b.cookie);
     expect(upstream.mock.calls[2][1].headers.Cookie).toBeUndefined();
     const second = await b.call('session.open'); const cookie = second.response.headers.get('set-cookie')!.split(';')[0];
     await b.call('http', { client: 'flixtor', url: 'https://flixtor.to/account' }, cookie);

@@ -23,7 +23,7 @@ export function createApp(platform: Platform, host: HostInfo, repo: Repository, 
   const [authRevision, setAuthRevision] = createSignal(0);
   const [inputRequest, setInputRequest] = createSignal<InputRequest>();
   const unsubscribe = repo.subscribe(value => setData(value));
-  const flixtor = new FlixtorService(platform), anime = new AnimeService(platform), segments = new SegmentService(platform), cinemeta = new CinemetaService(platform);
+  const flixtor = new FlixtorService(platform), anime = new AnimeService(platform, () => data.animeBaseUrl), segments = new SegmentService(platform), cinemeta = new CinemetaService(platform);
   const updates = createUpdates(platform, host);
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   function notify(value: string) { clearTimeout(noticeTimer); setNotice(value); noticeTimer = setTimeout(() => setNotice(''), 6000); }

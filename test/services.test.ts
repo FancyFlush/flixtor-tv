@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fixtures from './fixtures/http.json';
-import { decodePlayback, parseAccount, parseCards, parseDetail, parseHome, parseStream, responseFailure, safePath } from '../src/services/flixtor';
+import { decodePlayback, parseAccount, parseCards, parseDetail, parseEpisodeInfo, parseHome, parseStream, responseFailure, safePath } from '../src/services/flixtor';
 import { parseAnimeCards, parseAnimeEpisodes, parseAnimeServers, animeMapping } from '../src/services/anime';
 import { parseAniSkip, parseIntroDb } from '../src/services/segments';
 import { episodeKey, orderedEpisodes, titleKey } from '../src/domain/models';
@@ -24,6 +24,11 @@ describe('service contracts migrated from Kotlin', () => {
   it('keeps free capacity separate from parser failure', () => expect(responseFailure('<div id=content>All our servers are full. We cannot accept additional users.</div>')).toBe('CAPACITY'));
   it('does not infer entitlement from marketing', () => { expect(parseAccount('<p>VIP Active</p>')).toBe('GUEST'); expect(parseAccount('<a class=logout>Logout</a><p>VIP active</p>')).toBe('SIGNED_IN'); expect(parseAccount('<a class=logout>Logout</a><span class=acct-status>VIP Active</span>')).toBe('VIP'); expect(parseAccount('<a class=logout>Logout</a><span data-vip-status=expired></span>')).toBe('EXPIRED'); });
   it('orders episodes canonically', () => { const d = parseDetail(fixtures.detail, parseCards(fixtures.catalog)[0]); expect(orderedEpisodes(d.episodes.reverse()).map(episodeKey)).toEqual(['1:1', '1:2', '1:3', '1:4']); });
+  it('parses episode popup metadata and rejects changed markup', () => {
+    const info = parseEpisodeInfo('<div class="text-dark"><div class="d-flex p-1 justify-content-between"><div class="text-info poptitle">Tracker</div></div><div class="d-flex my-1 p-1 justify-content-between t12 graybg"><div><span class="fa fa-calendar"></span> Sun, Oct 26th, 2025</div></div><div class="d-flex mx-1 mt-1"><div class="text-info t14 poptitle">Leverage</div></div><div class="d-flex my-1 p-1 justify-content-between t12 graybg"><div>Season: 3</div><div>Episode: 2</div></div><div class="d-flex mt-1 mx-2 t12">Colter and Russell race to find the source.</div><div class="d-flex my-1 p-1 justify-content-between t12 graybg"><div><span class="fa fa-star"></span> 6.7 /10 (32,205 votes)</div><div><span class="fa fa-certificate"></span> TV-14</div></div><div class="d-flex my-1 p-1 justify-content-between t12 graybg"><div class="popcountry"><span class="fa fa-globe"></span> United States</div><div><span class="fa fa-volume-up"></span> English</div></div></div>');
+    expect(info).toEqual({ name: 'Leverage', airDate: 'Sun, Oct 26th, 2025', synopsis: 'Colter and Russell race to find the source.', rating: '6.7', votes: '32,205', contentRating: 'TV-14', country: 'United States', language: 'English' });
+    expect(() => parseEpisodeInfo('<div>Unexpected markup</div>')).toThrow('CHANGED');
+  });
   it('roundtrips encoded UTF-8 streams and signed URLs', () => {
     const json = JSON.stringify({ file: 'https://media.example/a.m3u8?token=abc%2B123', tracks: [{ file: '/ja.vtt', label: '日本語' }] });
     const shifted = [...json].map(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126 ? String.fromCharCode(33 + (c.charCodeAt(0) - 33 + 47) % 94) : c).join('');

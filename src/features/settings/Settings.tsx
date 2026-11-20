@@ -7,6 +7,7 @@ import { Avatar, Button, Glass, Menu, palette, type Option } from '../../ui/comp
 import { Overlay } from '../../ui/Overlay';
 import { narratePage } from '../../ui/narration';
 import { titleKey } from '../../domain/models';
+import { DEFAULT_ANIME_BASE, normalizeAnimeBaseUrl } from '../../services/anime';
 
 export function Settings() {
   const app = useApp(), location = useLocation(), navigate = useNavigate();
@@ -22,7 +23,7 @@ export function Settings() {
   const input = async (label: string, current: string, save: (value: string) => Promise<unknown>, secret = false) => { const value = await app.input(label, current, secret); if (value !== null) await save(value); };
   const options = (): Option[] => {
     const s = section();
-    if (!s) return ['Account', 'Profiles', 'Playback', 'Skip segments', 'Updates', 'Display', 'Library', 'About'].map(label => ({ id: label, label, action: () => navigate('/settings/' + label.toLowerCase().replace(' segments', '')) }));
+    if (!s) return ['Account', 'Profiles', 'Playback', 'Anime', 'Skip segments', 'Updates', 'Display', 'Library', 'About'].map(label => ({ id: label, label, action: () => navigate('/settings/' + label.toLowerCase().replace(' segments', '')) }));
     if (s === 'account') return [
       { id: 'status', label: 'Refresh account status', action: () => { app.refreshAccount(); app.notify('Checking account…'); } },
       { id: 'pair', label: 'Sign in with phone', action: () => navigate('/pair') },
@@ -50,6 +51,15 @@ export function Settings() {
       { id: 'buffer', label: 'Larger playback buffer', value: p().largerBuffer ? 'On' : 'Off', action: () => run(() => app.repo.updateProfile(p().id, { largerBuffer: !p().largerBuffer })) },
     ];
     if (s === 'quality') return [0, 720, 1080, 2160].map(quality => ({ id: String(quality), label: quality ? `${quality}p maximum` : 'Auto', selected: p().quality === quality, action: () => run(async () => { await app.repo.updateProfile(p().id, { quality }); navigate('/settings/playback'); }) }));
+    if (s === 'anime') return [
+      { id: 'source-url', label: 'Anime source URL', value: app.data.animeBaseUrl, action: () => run(async () => {
+        const value = await app.requestInput({ label: 'Anime source URL', value: app.data.animeBaseUrl, mode: 'text', maxLength: 256,
+          validate: input => { try { normalizeAnimeBaseUrl(input); return; } catch (error) { return error instanceof Error ? error.message : 'Enter a valid Anime source URL.'; } } });
+        if (value !== null) { await app.repo.setAnimeBaseUrl(value); app.notify('Anime source URL saved.'); }
+      }) },
+      { id: 'reset-source-url', label: 'Reset Anime source URL', value: app.data.animeBaseUrl === DEFAULT_ANIME_BASE ? 'Default' : undefined,
+        disabled: app.data.animeBaseUrl === DEFAULT_ANIME_BASE, action: () => run(async () => { await app.repo.setAnimeBaseUrl(DEFAULT_ANIME_BASE); app.notify('Anime source URL reset.'); }) },
+    ];
     if (s === 'skip') return ['intro', 'recap', 'outro', 'post_credits', 'mixed-op', 'mixed-ed', ...app.repo.customTypes().map(t => t.id)].map(type => ({ id: type, label: app.repo.customTypes().find(t => t.id === type)?.label || type.replaceAll('_', ' '), value: app.data.skip[`action:${p().id}::${type}`] || 'ASK', action: () => run(() => { const key = `action:${p().id}::${type}`; const list = ['ASK', 'AUTO', 'OFF']; return app.repo.setSkip(key, list[(list.indexOf(app.data.skip[key] || 'ASK') + 1) % list.length]); }) }));
     if (s === 'updates') return [
       { id: 'check', label: 'Check for updates', value: app.updates.state.phase, action: () => run(() => app.updates.check()) },
@@ -67,7 +77,7 @@ export function Settings() {
     if (s === 'library') return [{ id: 'clear', label: 'Clear current profile’s list and viewing history', action: () => setConfirm({ label: 'Clear this profile’s library?', action: () => app.repo.clearLibrary(p().id) }) }];
     return [];
   };
-  const categories = ['Account', 'Profiles', 'Playback', 'Skip segments', 'Updates', 'Display', 'Library', 'About'];
+  const categories = ['Account', 'Profiles', 'Playback', 'Anime', 'Skip segments', 'Updates', 'Display', 'Library', 'About'];
   return <>
     <Column width={1728} height={848} gap={28} scroll="none">
       <Row width={1728} height={116} gap={26}>
@@ -76,7 +86,7 @@ export function Settings() {
           <text skipFocus width={1300} height={38} fontSize={26} color={palette.muted}>{p()?.name} · {accountLabel()}</text></Column>
       </Row>
       <Row width={1728} height={680} gap={50}>
-        <Column width={330} height={680} gap={14} scroll="none">
+        <Column width={330} height={680} gap={8} scroll="none">
           <For each={categories}>{label => <Button label={label} width={330} height={68} quiet selected={section() === label.toLowerCase().replace(' segments', '') || !section() && label === 'Account'} action={() => navigate('/settings/' + label.toLowerCase().replace(' segments', ''))} />}</For>
         </Column>
         <view width={1348} height={680}><Glass width={1348} height={680} radius={30} />

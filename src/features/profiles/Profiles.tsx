@@ -25,7 +25,7 @@ export function Profiles() {
   }
   const scale = () => Math.min((1920 * (1 - 2 * app.data.fit.horizontal / 100)) / 1728, (1080 * (1 - 2 * app.data.fit.vertical / 100)) / 972);
   return <Column x={1920 * app.data.fit.horizontal / 100} y={1080 * app.data.fit.vertical / 100} width={1728} height={972} scale={scale()} pivot={0} gap={38} scroll="none">
-    <text skipFocus width={1728} height={90} fontSize={34} fontFamily="Roboto700">FLIXTOR</text>
+    <view skipFocus width={380} height={102} src="./flixtor-logo.png" imageType="regular" />
     <view skipFocus width={1728} height={210}>
       <text skipFocus y={20} width={1728} height={95} fontSize={72} textAlign="center" fontFamily="Roboto700">Who’s watching?</text>
       <text skipFocus y={128} width={1728} height={50} fontSize={29} textAlign="center" color={palette.muted}>{manage() ? 'Choose a profile to manage.' : 'Your list. Your place in every story.'}</text>

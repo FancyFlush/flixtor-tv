@@ -94,6 +94,16 @@ test('search poster sizes control grid density and persist the selection', async
   await setup(page, { '/search/layout?ajax=1&page=1': { body: cards('Sized', 1, 30) } });
   await activate(page, 'Search');
   const field = page.getByRole('textbox', { name: 'Search films and TV shows', exact: true });
+  const fieldBounds = await field.boundingBox(), navBounds = await page.getByRole('button', { name: 'Search', exact: true }).boundingBox();
+  expect(fieldBounds!.y - navBounds!.y - navBounds!.height).toBeGreaterThanOrEqual(190);
+  const modeStart = await page.getByRole('button', { name: 'Movies & TV', exact: true }).boundingBox();
+  const modeEnd = await page.getByRole('button', { name: 'Studios', exact: true }).boundingBox();
+  expect(Math.abs((modeStart!.x + modeEnd!.x + modeEnd!.width) / 2 - 960)).toBeLessThan(2);
+  await field.focus();
+  await expect(field).toHaveAttribute('placeholder', '');
+  expect(await field.evaluate(element => getComputedStyle(element).outlineStyle)).toBe('none');
+  await field.evaluate(element => (element as HTMLInputElement).blur());
+  await expect(field).toHaveAttribute('placeholder', 'Search');
   await field.fill('layout');
   const title = page.getByRole('button', { name: 'Sized 1', exact: true });
   await expect(title).toBeAttached();
@@ -115,8 +125,9 @@ test('search poster sizes control grid density and persist the selection', async
   await cycleSize();
   await expect.poll(savedSize).toBe('small');
   await expect(page.getByRole('button', { name: 'Poster size: small', exact: true })).toBeAttached();
+  expect((await page.getByRole('button', { name: 'Poster size: small', exact: true }).boundingBox())!.width).toBeGreaterThan(120);
   const smallWidth = await width();
-  expect(await firstRowCount()).toBe(10);
+  expect(await firstRowCount()).toBe(8);
   expect(await rows()).toBeGreaterThanOrEqual(3);
   await cycleSize();
   await expect.poll(savedSize).toBe('medium');
@@ -149,18 +160,9 @@ for (const height of [1080, 720]) {
       const input = await field.boundingBox(), poster = await focused(page).boundingBox();
       return !!input && !!poster && poster.x >= input.x + input.width && poster.height > poster.width * 1.3;
     }).toBe(true);
-    const heading = await page.evaluate(async () => {
-      const path = '/src/ui/focus.ts'; const { activeElement, nodeRect } = await import(path);
-      let root = activeElement(); while (root?.parent) root = root.parent;
-      const visit = (node: typeof root): ReturnType<typeof nodeRect> | undefined => {
-        if (!node?.lng) return;
-        if (node.lng.text === 'Find your next story.') return nodeRect(node);
-        for (const child of node.children || []) { const result = visit(child); if (result) return result; }
-      };
-      return visit(root);
-    });
-    expect(heading?.visible).toBe(true);
-    expect(heading!.y + heading!.height).toBeLessThan((await field.boundingBox())!.y);
+    const mode = await page.getByRole('button', { name: 'Anime', exact: true }).last().boundingBox();
+    expect(mode).toBeTruthy();
+    expect(mode!.y + mode!.height).toBeLessThan((await field.boundingBox())!.y);
     await page.screenshot({ path: info.outputPath('search-scrolled.png') });
   });
 

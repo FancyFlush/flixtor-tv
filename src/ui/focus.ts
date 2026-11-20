@@ -74,7 +74,8 @@ export function nodeRect(node?: ElementNode, clip = true) {
     visible: visible && x + width > 0 && y + height > 0 && x < 1920 && y < 1080 };
 }
 export function semantic(node: () => ElementNode | undefined, label: () => string, action: () => void,
-  disabled = () => false, selected = () => activeElement() === node(), focus = () => focusElement(node()), checked?: () => boolean, escapeClip = () => false) {
+  disabled = () => false, selected = () => activeElement() === node(), focus = () => focusElement(node()), checked?: () => boolean, escapeClip = () => false,
+  seekRepeat?: () => -1 | 1 | undefined) {
   const scope = useContext(FocusScope);
   let button: HTMLButtonElement | undefined;
   const off = () => disabled() || activeScope() !== scope;
@@ -87,10 +88,11 @@ export function semantic(node: () => ElementNode | undefined, label: () => strin
     (document.querySelector(`[data-overlay="${scope}"]`) || document.getElementById('semantics'))!.appendChild(button);
   });
   createEffect(() => {
-    const text = label(), unavailable = off(), focused = selected(), chosen = checked?.();
+    const text = label(), unavailable = off(), focused = selected(), chosen = checked?.(), direction = seekRepeat?.();
     if (!button) return;
     button.textContent = text; button.disabled = unavailable; button.tabIndex = unavailable ? -1 : 0;
     button.dataset.focused = String(focused && !unavailable);
+    if (direction) button.dataset.seekRepeat = String(direction); else delete button.dataset.seekRepeat;
     if (chosen !== undefined) button.setAttribute('aria-pressed', String(chosen));
     if (focused && !unavailable && document.activeElement !== button) button.focus({ preventScroll: true });
   });

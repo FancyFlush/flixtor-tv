@@ -22,31 +22,36 @@ export function EdgeFade(props: { side: 'left' | 'right'; width: number; height:
     linearGradient={{ colors: props.side === 'left' ? [palette.ground, 0x080c1400] : [0x080c1400, palette.ground], stops: [0, 1], angle: 0 }} />;
 }
 export interface ButtonProps {
-  label: string; action(): unknown; item?: unknown; width?: number; height?: number; fontSize?: number; autofocus?: boolean; id?: string;
+  label: string; action(): unknown; item?: unknown; width?: number; height?: number; fontSize?: number; iconSize?: number; autofocus?: boolean; id?: string;
   disabled?: boolean; selected?: boolean; selectionFill?: boolean; onFocus?(): void; icon?: IconName; primary?: boolean; quiet?: boolean; iconOnly?: boolean;
+  onLeft?(): boolean | void; onRight?(): boolean | void; holdSeek?: -1 | 1;
 }
 export function Button(props: ButtonProps) {
   let node: ElementNode | undefined; const [focused, setFocused] = createSignal(false), [pressed, setPressed] = createSignal(false);
   let release: ReturnType<typeof setTimeout> | undefined;
   const scope = useContext(FocusScope);
   const off = () => !!props.disabled || activeScope() !== scope;
+  const iconSize = props.iconSize || 28;
+  const textX = props.icon ? 23 + iconSize + 13 : 22;
+  const textWidth = (props.width || 280) - textX - (props.icon ? 20 : 22);
   const activate = () => {
     if (off()) return;
     setPressed(true); clearTimeout(release); release = setTimeout(() => setPressed(false), 100); props.action();
   };
-  semantic(() => node, () => props.label, activate, () => !!props.disabled, undefined, undefined, () => !!props.selected);
+  semantic(() => node, () => props.label, activate, () => !!props.disabled, undefined, undefined, () => !!props.selected, undefined, () => props.holdSeek);
   registerFocus(() => props.id, () => node, () => !!props.autofocus);
   onCleanup(() => clearTimeout(release));
   const fill = () => focused() ? palette.accent : props.primary ? palette.foreground : props.selected && props.selectionFill !== false ? 0x71859b66 : props.quiet ? 0x00000000 : glassColor();
   const dark = () => focused() || !!props.primary;
   return <view ref={node} item={props.item} width={props.width || 280} height={props.height || 68} skipFocus={off()} autofocus={props.autofocus}
-    color={fill()} borderRadius={(props.height || 68) / 2}
+    color={fill()} borderRadius={16}
     border={{ width: props.quiet && !focused() ? 0 : 1, color: focused() ? palette.white : 0xe6f2ff33 }}
+    onLeft={props.onLeft} onRight={props.onRight}
     alpha={props.disabled ? 0.4 : 1} scale={reducedMotion() ? 1 : pressed() ? 0.97 : focused() ? 1.035 : 1}
     transition={{ color: motion.focus, scale: motion.focus }}
     onFocus={() => { setFocused(true); props.onFocus?.(); }} onBlur={() => setFocused(false)} onEnter={() => { activate(); return true; }}>
-    <Show when={props.icon}><view skipFocus x={props.iconOnly ? ((props.width || 68) - 28) / 2 : 23} y={((props.height || 68) - 28) / 2} width={28} height={28} src={icon(props.icon!, dark())} imageType="svg" /></Show>
-    <Show when={!props.iconOnly}><text skipFocus x={props.icon ? 64 : 22} y={((props.height || 68) - 34) / 2} width={(props.width || 280) - (props.icon ? 84 : 44)} height={38} fontSize={props.fontSize || 27} maxLines={1} color={dark() ? palette.ink : palette.foreground}>{props.label}</text></Show>
+    <Show when={props.icon}><view skipFocus x={props.iconOnly ? ((props.width || 68) - iconSize) / 2 : 23} y={((props.height || 68) - iconSize) / 2} width={iconSize} height={iconSize} src={icon(props.icon!, dark())} imageType="svg" /></Show>
+    <Show when={!props.iconOnly}><text skipFocus x={textX} y={((props.height || 68) - 34) / 2} width={textWidth} height={38} fontSize={props.fontSize || 27} maxLines={1} color={dark() ? palette.ink : palette.foreground}>{props.label}</text></Show>
   </view>;
 }
 export interface Option { id: string; label: string; value?: string; action(): unknown; disabled?: boolean; selected?: boolean }

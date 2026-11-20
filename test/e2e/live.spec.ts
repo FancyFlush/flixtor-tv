@@ -33,8 +33,11 @@ test('browser playback uses real video time, pause, resume and teardown', async 
     const { browserPlatform } = await import(moduleUrl);
     const platform = browserPlatform();
     try {
-      await platform.call('player.load', { id: 'real-video', uri: 'https://media.example/video.webm', mime: 'video/webm', position: 500, play: true });
+      await platform.call('player.load', { id: 'real-video', uri: 'https://media.example/video.webm', mime: 'video/webm', position: 500, play: true, videoFit: 'fill' });
       const video = document.querySelector('video')!;
+      const fillOnLoad = video.style.objectFit;
+      await platform.call('player.command', { id: 'real-video', action: 'video-fit', fit: 'native' });
+      const nativeOnCommand = video.style.objectFit;
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Real video did not play')), 8000);
         if (!video.paused && video.readyState >= 3) { clearTimeout(timeout); resolve(); }
@@ -48,11 +51,44 @@ test('browser playback uses real video time, pause, resume and teardown', async 
       await new Promise(resolve => setTimeout(resolve, 300));
       const advanced = video.currentTime > paused + 0.1;
       await platform.call('player.command', { id: 'real-video', action: 'stop' });
-      return { held, advanced, resumedAt: paused, released: !document.querySelector('video') };
+      return { held, advanced, resumedAt: paused, released: !document.querySelector('video'), fillOnLoad, nativeOnCommand };
     } finally { platform.dispose(); }
   });
-  expect(result).toMatchObject({ held: true, advanced: true, released: true });
+  expect(result).toMatchObject({ held: true, advanced: true, released: true, fillOnLoad: 'cover', nativeOnCommand: 'contain' });
   expect(result.resumedAt).toBeGreaterThanOrEqual(0.45);
+});
+
+test('browser player applies subtitle size, appearance and sync delay', async ({ page }) => {
+  await page.route('**/captions.vtt', route => route.fulfill({ contentType: 'text/vtt', body: 'WEBVTT\n\n00:00:10.000 --> 00:00:12.000\nA caption\n' }));
+  await page.route('**/__platform/call', async route => {
+    const { method } = route.request().postDataJSON();
+    await route.fulfill({ json: { value: method === 'media' ? { uri: '/test/fixtures/browser-player.webm', captions: [{ uri: '/captions.vtt', label: 'English', mime: 'text/vtt' }] } : true } });
+  });
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const moduleUrl = '/src/platform/browser.ts';
+    const { browserPlatform } = await import(moduleUrl);
+    const platform = browserPlatform();
+    try {
+      await platform.call('player.load', { id: 'subtitle-video', uri: 'https://media.example/video.webm', mime: 'video/webm', play: true });
+      const track = document.querySelector<HTMLTrackElement>('video track')!;
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Subtitle track did not load')), 5000);
+        track.addEventListener('load', () => { clearTimeout(timer); resolve(); }, { once: true });
+        track.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Subtitle track failed to load')); }, { once: true });
+        track.track.mode = 'hidden';
+      });
+      const cue = track.track.cues?.[0];
+      if (!cue) throw new Error('Subtitle cue was not parsed');
+      await platform.call('player.command', { id: 'subtitle-video', action: 'caption-style', size: 'large', appearance: 'boxed', delay: 1500 });
+      const css = [...document.querySelectorAll('style')].find(style => style.textContent?.includes('video::cue'))?.textContent || '';
+      const result = { start: cue.startTime, end: cue.endTime, css };
+      await platform.call('player.command', { id: 'subtitle-video', action: 'stop' });
+      return result;
+    } finally { platform.dispose(); }
+  });
+  expect(result.start).toBe(11.5); expect(result.end).toBe(13.5);
+  expect(result.css).toContain('font-size:4.8vh'); expect(result.css).toContain('background-color:rgba(0,0,0,0.78)');
 });
 
 test('live browser password entry is masked and cancellable', async ({ page }) => {

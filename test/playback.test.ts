@@ -41,6 +41,58 @@ function deferred<T>() {
   const promise = new Promise<T>(r => { resolve = r; });
   return { promise, resolve };
 }
+it('passes persisted subtitle and video fit preferences to each player load', async () => {
+  const f = await fixture();
+  try {
+    await f.repo.updateProfile('default', { subtitleSize: 'large', subtitleAppearance: 'outline', subtitleDelay: -700, videoFit: 'fill' });
+    await f.player.start(detail);
+    expect(f.loads[0]).toMatchObject({ subtitleSize: 'large', subtitleAppearance: 'outline', subtitleDelay: -700, videoFit: 'fill' });
+  } finally { f.close(); }
+});
+it('hides paused controls after three seconds and keeps the seek HUD separate', async () => {
+  vi.useFakeTimers();
+  const f = await fixture();
+  try {
+    await f.player.start(detail); f.emit(f.player.state.id);
+    f.player.interact();
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(f.player.state.controls).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.player.state.controls).toBe(false);
+    await f.player.seekHidden(10_000);
+    expect(f.player.state).toMatchObject({ controls: false, seekHud: true, seekHudPosition: 40_000 });
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(f.player.state.seekHud).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.player.state.seekHud).toBe(false);
+  } finally { f.close(); vi.useRealTimers(); }
+});
+it('commits a seek three seconds after the last preview and cancels on Back', async () => {
+  vi.useFakeTimers();
+  const f = await fixture();
+  try {
+    await f.player.start(detail); f.emit(f.player.state.id, { playing: true, playRequested: true });
+    f.player.preview(40_000);
+    await vi.advanceTimersByTimeAsync(2000);
+    f.player.preview(50_000);
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(f.commands.filter(c => c.action === 'seek')).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.commands.filter(c => c.action === 'seek')).toEqual([{ id: f.player.state.id, action: 'seek', position: 50_000 }]);
+    f.player.preview(60_000); f.player.preview();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(f.commands.filter(c => c.action === 'seek')).toHaveLength(1);
+  } finally { f.close(); vi.useRealTimers(); }
+});
+it('accumulates quick minute seeks before player position events arrive', async () => {
+  const f = await fixture();
+  try {
+    await f.player.start(detail);
+    f.emit(f.player.state.id, { position: 100_000, duration: 500_000 });
+    await f.player.seekBy(60_000); await f.player.seekBy(60_000);
+    expect(f.commands.filter(command => command.action === 'seek').map(command => command.position)).toEqual([160_000, 220_000]);
+  } finally { f.close(); }
+});
 it('rejects early automatic credits skips and advances once only after native completion', async () => {
   vi.useFakeTimers();
   const f = await fixture();

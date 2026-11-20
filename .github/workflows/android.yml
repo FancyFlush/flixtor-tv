@@ -90,9 +90,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" android/app/build/outputs/apk/release/app-release.apk release.json --clobber
+            gh release upload "$GITHUB_REF_NAME" android/app/build/outputs/apk/release/flixtor.apk android/app/build/outputs/apk/release/app-release.apk release.json --clobber
           else
-            gh release create "$GITHUB_REF_NAME" android/app/build/outputs/apk/release/app-release.apk release.json --title "$GITHUB_REF_NAME" --generate-notes
+            gh release create "$GITHUB_REF_NAME" android/app/build/outputs/apk/release/flixtor.apk android/app/build/outputs/apk/release/app-release.apk release.json --title "$GITHUB_REF_NAME" --generate-notes
           fi
       - name: Publish latest main build
         if: github.ref == 'refs/heads/main'
@@ -106,7 +106,7 @@ jobs:
           fi
           if gh release view main-latest >/dev/null 2>&1; then
             gh release edit main-latest --title "Latest main build" --prerelease
-            gh release upload main-latest android/app/build/outputs/apk/release/app-release.apk release.json --clobber
+            gh release upload main-latest android/app/build/outputs/apk/release/flixtor.apk android/app/build/outputs/apk/release/app-release.apk release.json --clobber
           else
-            gh release create main-latest android/app/build/outputs/apk/release/app-release.apk release.json --title "Latest main build" --prerelease --notes "Updated by each successful push to main."
+            gh release create main-latest android/app/build/outputs/apk/release/flixtor.apk android/app/build/outputs/apk/release/app-release.apk release.json --title "Latest main build" --prerelease --notes "Updated by each successful push to main."
           fi

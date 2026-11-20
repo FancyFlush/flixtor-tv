@@ -37,11 +37,27 @@ function metadata(versionCode: number, versionName: string, tag: string) {
     versionName,
     minSdk: 29,
     sha256: 'a'.repeat(64),
-    apkUrl: `https://github.com/FancyFlush/flixtor-tv/releases/download/${tag}/app-release.apk`,
+    apkUrl: `https://github.com/FancyFlush/flixtor-tv/releases/download/${tag}/flixtor.apk`,
   };
 }
 
 describe('main push updates', () => {
+  it('rejects metadata that points outside supported APK asset names', async () => {
+    const f = fixture();
+    const originalCall = f.platform.call.bind(f.platform);
+    f.platform.call = async <T>(method: string, args: Record<string, unknown> = {}) => {
+      if (method === 'http' && args.url === stableMetadata) {
+        return { status: 200, body: JSON.stringify({ ...metadata(1007, '1.0.7', 'v1.0.7'), apkUrl: 'https://github.com/FancyFlush/flixtor-tv/releases/download/v1.0.7/other.apk' }) } as T;
+      }
+      return originalCall<T>(method, args);
+    };
+    const updates = createUpdates(f.platform, f.host);
+    try {
+      await updates.check();
+      expect(updates.state.phase).toBe('failed');
+    } finally { updates.dispose(); }
+  });
+
   it('prepares the newer main build even when the stable release is unchanged', async () => {
     const f = fixture();
     const updates = createUpdates(f.platform, f.host);
@@ -54,6 +70,25 @@ describe('main push updates', () => {
 
   it('continues checking stable releases before the first main build is published', async () => {
     const f = fixture(404);
+    const updates = createUpdates(f.platform, { ...f.host, versionCode: 1006 });
+    try {
+      await updates.check();
+      expect(updates.state.phase).toBe('ready');
+      expect(f.prepared[0]?.versionName).toBe('1.0.7');
+    } finally { updates.dispose(); }
+  });
+
+  it('continues checking stable releases when the main build feed fails', async () => {
+    const f = fixture();
+    f.platform.call = async <T>(method: string, args: Record<string, unknown> = {}): Promise<T> => {
+      if (method === 'installer.prepare') { f.prepared.push(args); return { ready: true } as T; }
+      if (method !== 'http') throw new Error(`Unexpected call: ${method}`);
+      const url = String(args.url);
+      if (url === stableApi) return { status: 200, body: JSON.stringify({ assets: [{ name: 'release.json', browser_download_url: stableMetadata }] }) } as T;
+      if (url === mainApi) return { status: 500, body: '' } as T;
+      if (url === stableMetadata) return { status: 200, body: JSON.stringify(metadata(1007, '1.0.7', 'v1.0.7')) } as T;
+      throw new Error(`Unexpected URL: ${url}`);
+    };
     const updates = createUpdates(f.platform, { ...f.host, versionCode: 1006 });
     try {
       await updates.check();

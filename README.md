@@ -24,7 +24,7 @@ cd android
 python3 ../tools/build_release.py
 ```
 
-Set `JAVA_HOME` to JDK 17 if your default Java differs. The release helper creates a private signing key and config in `~/.local/share/flixtor-tv/`. Keep a secure backup: updates need the same key. Signing keys and passwords never belong in Git. Advanced builds can supply `TV_KEYSTORE`, `TV_STORE_PASSWORD`, `TV_KEY_ALIAS`, and `TV_KEY_PASSWORD` directly to Gradle.
+Set `JAVA_HOME` to JDK 17 if your default Java differs. The Android Gradle wrapper detects JDK 17 automatically on common Linux, macOS and Windows installations and rejects JDK 25 with an explicit error instead of starting a broken Gradle process. `JAVA_HOME_17` may be used to specify JDK 17 directly. The release helper creates a private signing key and config in `~/.local/share/flixtor-tv/`. Keep a secure backup: updates need the same key. Signing keys and passwords never belong in Git. Advanced builds can supply `TV_KEYSTORE`, `TV_STORE_PASSWORD`, `TV_KEY_ALIAS`, and `TV_KEY_PASSWORD` directly to Gradle.
 
 Optional build settings are listed in the tracked template `.env.example`. Copy it to the untracked `.env` and fill in only what you need. Gradle reads these from the environment, so export them before building:
 
@@ -37,7 +37,7 @@ Blank entries are treated as unset, so an incomplete `.env` builds normally. Eve
 
 ## Anime
 
-Open **Anime** in the navigation rail to browse popular titles or search HiAnime. Details, My List and Continue Watching use the existing profile library. Every manual start/resume asks for **English dub** or **Japanese with subtitles**, including episode selection inside the player. Unavailable versions are disabled. Autoplay and the still-watching confirmation retain the selected version; an unavailable next episode stops at the chooser rather than changing audio silently. Back cancels the chooser and restores the initiating screen or episode drawer.
+Open **Anime** in the navigation rail to browse popular titles or search HiAnime. If the provider changes domains, update its HTTPS origin under **Settings → Anime → Anime source URL**; clear the field or choose **Reset Anime source URL** to restore the default. Details, My List and Continue Watching use the existing profile library. Every manual start/resume asks for **English dub** or **Japanese with subtitles**, including episode selection inside the player. Unavailable versions are disabled. Autoplay and the still-watching confirmation retain the selected version; an unavailable next episode stops at the chooser rather than changing audio silently. Back cancels the chooser and restores the initiating screen or episode drawer.
 
 The built-in native adapter resolves streams afresh and uses source-specific media/caption headers. It has no backend or extension runtime and never receives the FlixTor cookie jar. Source access, supported embed servers, caption availability and audio versions depend on the provider. V1 supports its ZokoAnime embed. Profile viewing progress and local skip marks are version-specific. AniSkip supplies anime opening, ending, recap and mixed ranges using explicit MAL/episode mappings from supported embeds. Missing mappings can be entered in Skip segments; no title-name or HiAnime-id guesses are made.
 
@@ -50,7 +50,7 @@ Download the signed APK from [GitHub Releases](https://github.com/FancyFlush/fli
 Enable developer options and debugging on your own TV. Use its displayed debugging/pairing settings; exact screens vary by device and Android version. For wireless debugging use `adb pair IP:PAIRING_PORT` and then `adb connect IP:DEBUG_PORT`. Install with:
 
 ```sh
-adb -s DEVICE_SERIAL install -r app/build/outputs/apk/release/app-release.apk
+adb -s DEVICE_SERIAL install -r app/build/outputs/apk/release/flixtor.apk
 ```
 
 Open **FlixTor TV · Personal** from the TV launcher. Debug and personal-release keys differ: switching from debug to release requires uninstalling the debug build and removes its local data. Release updates reuse the personal key and preserve data.
@@ -87,7 +87,7 @@ Episodes opens on the current season, scrolls the currently playing episode into
 
 Buffer ahead pauses the current video and builds up to 90 seconds of buffer. Play now resumes explicitly; Cancel restores prior playback state. The buffer target is bounded to the lesser of 96 MiB or one quarter of the app heap, with small loading-chunk overshoot. High-bitrate media may hit the byte limit sooner. A stalled buffer offers Retry and Play now. Backgrounding clears resume intent. This is an in-memory current-video buffer, not a download or next-episode preload.
 
-TV show details list one season at a time through a season picker that opens on the season still being watched. Each episode is a compact row showing its number, title, a watched progress track and the remaining or watched state, so progress is visible without scrolling the whole show.
+TV show details list one season at a time through a season picker that opens on the season still being watched. For FlixTor TV, the highlighted episode's synopsis and available air date/rating details appear beside the episode list. Each episode is a compact row showing its number, title, a watched progress track and the remaining or watched state, so progress is visible without scrolling the whole show.
 
 ## Skip regions (IntroDB and AniSkip)
 
@@ -107,7 +107,7 @@ Access errors distinguish required sign-in, expired sessions, VIP restrictions, 
 
 ## Releases and problem reports
 
-GitHub Actions verifies unit tests, lint, debug builds, and notification tests. A successful push to `main` builds with the existing release key and updates the `main-latest` prerelease for the in-app updater. Stable `vMAJOR.MINOR.PATCH` tags publish `app-release.apk` plus `release.json` as before. CI version codes are `1000 + GITHUB_RUN_NUMBER`; commit SHA is embedded in the APK. Configure repository secrets `TV_KEYSTORE_BASE64`, `TV_STORE_PASSWORD`, `TV_KEY_PASSWORD`, `TV_KEY_ALIAS`, `TV_TMDB_TOKEN`, and optionally `TV_INTRODB_API_KEY` to enable contributing skip timestamps from release builds. Keys never belong in the source tree. Keep the original private key backed up.
+GitHub Actions verifies unit tests, lint, debug builds, and notification tests. A successful push to `main` builds with the existing release key and updates the `main-latest` prerelease for the in-app updater. Stable `vMAJOR.MINOR.PATCH` tags publish `flixtor.apk`, the `app-release.apk` compatibility alias, and `release.json`; metadata targets the alias so older 1.0 updaters can install it. CI version codes are `1000 + GITHUB_RUN_NUMBER`; commit SHA is embedded in the APK. Configure repository secrets `TV_KEYSTORE_BASE64`, `TV_STORE_PASSWORD`, `TV_KEY_PASSWORD`, `TV_KEY_ALIAS`, `TV_TMDB_TOKEN`, and optionally `TV_INTRODB_API_KEY` to enable contributing skip timestamps from release builds. Keys never belong in the source tree. Keep the original private key backed up.
 
 After a successful `main` push, the updater checks both the latest stable release and `main-latest`, and offers the newer compatible build. Stable release tags continue to publish separately. Updates use the same release signing key, so existing release installations update in place without uninstalling; Android still requires the user to confirm installation.
 
@@ -126,6 +126,7 @@ Observed flows:
 - `GET /show/{movies|tvshows}?ajax=1&page=...&sort=...`: catalogue HTML fragments.
 - `GET /search/{query}?ajax=1&page=...`: search result HTML.
 - `GET /watch/{movie|tv}/{id}/{slug}`: metadata and episode rows.
+- `GET /ajax/info/e/{id}/{season}/{episode}`: the highlighted episode's HTML details.
 - `POST /ajax/viplogin`: the website's JSON text body with `uname` and `passw`.
 - `POST /ajax/pair/new`, `/ajax/pair/poll`: cookie-bound device pairing.
 - `GET /ajax/v4/m/{id}` or `/ajax/v4/e/{id}/{season}/{episode}`: media URL and tracks after server authorization.
@@ -152,7 +153,7 @@ On both an ONN Google TV device and Chromecast with Google TV: browse, search, o
 
 Movie discovery uses TMDB for credits, studios, trending/rated movies, and recommendations. Configure `TV_TMDB_TOKEN` in ignored `.env` with a free personal API key or Read Access Token. The native host and loopback development bridge attach the credential only to TMDB API calls. It never enters frontend bundles; a dedicated revocable credential is appropriate because APK configuration can be extracted. About includes required attribution and the unmodified official logo.
 
-`tools/build_release.py` reads local `TV_` settings automatically. Direct Gradle invocations still require exported environment variables. Local emulator update built as version `1.0.1` / code `1001`; projector acceptance remains separate.
+`tools/build_release.py` reads local `TV_` settings automatically. Direct Gradle invocations still require exported environment variables. The current local build defaults to version `1.0.2` / code `1002`; the earlier emulator update test used `1.0.1` / code `1001`, and projector acceptance remains separate.
 
 Details support cast, directors, production studios, and related movies. People search separates acting from directing credits. Discovery titles resolve FlixTor availability independently; metadata failures do not block already resolved provider titles. Movie sorting learns wire values from provider controls. The current guest response is a capacity notice, so live VIP ordering must still be checked with an authenticated device.
 

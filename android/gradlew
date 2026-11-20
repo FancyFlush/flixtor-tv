@@ -140,6 +140,43 @@ location of your Java installation."
     fi
 fi
 
+# This project uses Gradle 8.7, which must run on JDK 17. Never fall through
+# to a newer JDK (including JDK 25) when a JDK 17 installation is available.
+java_is_17() {
+    java_output=$("$1" -version 2>&1)
+    case "$java_output" in
+        *'version "17.'*|*'version 17.'*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+if ! java_is_17 "$JAVACMD"; then
+    found_17=
+    for candidate in \
+        /usr/lib/jvm/msopenjdk-17-amd64 \
+        /usr/lib/jvm/java-17-openjdk-* \
+        /usr/lib/jvm/*-17-* \
+        "$JAVA_HOME_17" \
+        "$HOME/.sdkman/candidates/java"/*17* \
+        "$HOME/.asdf/installs/java"/*17* \
+        /Library/Java/JavaVirtualMachines/*17* \
+        /opt/homebrew/opt/openjdk@17/libexec \
+        /usr/local/opt/openjdk@17/libexec
+    do
+        if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ] && java_is_17 "$candidate/bin/java"; then
+            JAVACMD=$candidate/bin/java
+            JAVA_HOME=$candidate
+            found_17=true
+            break
+        fi
+    done
+    if [ -z "$found_17" ]; then
+        die "ERROR: Flixtor TV requires JDK 17 to run Gradle 8.7.
+
+Install JDK 17 and set JAVA_HOME to it. JDK 25 is not supported by this build."
+    fi
+fi
+
 # Increase the maximum file descriptors if we can.
 if ! "$cygwin" && ! "$darwin" && ! "$nonstop" ; then
     case $MAX_FD in #(

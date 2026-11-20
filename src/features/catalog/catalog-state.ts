@@ -2,11 +2,11 @@ import { episodeKey, finished, orderedEpisodes, titleKey, type Detail, type Titl
 
 export type SearchMode = 'media' | 'anime' | 'people' | 'studios';
 export function searchMode(value: unknown): SearchMode { return value === 'anime' || value === 'people' || value === 'studios' ? value : 'media'; }
-export function catalogueKey(destination: string, query: string, sort: string, profile: string, auth: number, mode: SearchMode = 'media') {
+export function catalogueKey(destination: string, query: string, sort: string, profile: string, auth: number, mode: SearchMode = 'media', animeBaseUrl = '') {
   const key = ['catalog', destination, query, sort, profile, auth] as const;
-  return destination === 'search' ? [...key, mode] as const : key;
+  return destination === 'search' ? [...key, mode, ...(mode === 'anime' ? [animeBaseUrl] : [])] as const : key;
 }
-export function shelfQueryKey(destination: string, category: string, query: string, profile: string, auth: number) { return ['catalog-shelf', destination, category, query, profile, auth] as const; }
+export function shelfQueryKey(destination: string, category: string, query: string, profile: string, auth: number, animeBaseUrl = '') { return ['catalog-shelf', destination, category, query, profile, auth, ...(destination === 'anime' ? [animeBaseUrl] : [])] as const; }
 export function browseCategories(destination: string, sort: string, query: string) {
   if (destination === 'anime') return query.trim() ? [{ id: 'search', label: 'Search results' }] : [
     { id: 'most-popular', label: 'Most popular' }, { id: 'top-airing', label: 'Top airing' }, { id: 'recently-updated', label: 'Recently updated' },

@@ -4,6 +4,16 @@ import type { HttpResponse, Platform } from '../platform/platform';
 export const BASE = 'https://flixtor.to';
 export const USER_AGENT = 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 export const actorSearchQuery = (name: string) => `@actor: ${name.trim()}`;
+export interface FlixtorEpisodeInfo {
+  name: string;
+  airDate?: string;
+  synopsis?: string;
+  rating?: string;
+  votes?: string;
+  contentRating?: string;
+  country?: string;
+  language?: string;
+}
 export function secureUrl(value: string, base?: string) {
   const url = new URL(value, base);
   if (url.protocol !== 'https:' || url.username || url.password || url.port && url.port !== '443' || !url.hostname.includes('.') || url.hostname.endsWith('.local') || /^[\d.]+$/.test(url.hostname) || url.hostname.includes(':')) throw new ServiceError('CHANGED');
@@ -73,6 +83,26 @@ export function parseDetail(html: string, original: Title): Detail {
       const season = Number(attr(n, 'data-pes')), number = Number(attr(n, 'data-pep'));
       return Number.isInteger(season) && Number.isInteger(number) ? [{ season, number, name: text(one(n, '.epTitle')) }] : [];
     }), e => `${e.season}:${e.number}`) };
+}
+export function parseEpisodeInfo(html: string): FlixtorEpisodeInfo {
+  check(html); const doc = document(html);
+  const name = text(one(doc, '.d-flex.mx-1.mt-1 .poptitle')) || all(doc, '.poptitle').map(text).filter(Boolean).at(-1) || '';
+  if (!name) throw new ServiceError('CHANGED');
+  const rows = all(doc, '.graybg');
+  const airDate = text(rows.find(row => one(row, '.fa-calendar')));
+  const ratingText = text(rows.find(row => one(row, '.fa-star')));
+  const ratingMatch = /(\d+(?:\.\d+)?)\s*\/\s*10(?:\s*\(([^)]*)\))?/.exec(ratingText);
+  const parentText = (selector: string) => text(one(doc, selector)?.parent);
+  return {
+    name,
+    airDate: airDate || undefined,
+    synopsis: text(one(doc, '.d-flex.mt-1.mx-2.t12')) || undefined,
+    rating: ratingMatch?.[1],
+    votes: ratingMatch?.[2]?.replace(/\s*votes?$/i, ''),
+    contentRating: parentText('.fa-certificate') || undefined,
+    country: text(one(doc, '.popcountry')) || undefined,
+    language: parentText('.fa-volume-up') || undefined,
+  };
 }
 export function parseAccount(html: string): Account {
   const doc = document(html); if (!one(doc, '.logout')) return 'GUEST';
@@ -160,6 +190,11 @@ export class FlixtorService {
     return parseCards(await this.raw(`/search/${encodeURIComponent(query)}?ajax=1&page=${page}${tab ? `&tab=${tab}` : ''}`, signal));
   }
   async detail(t: Title, signal?: AbortSignal) { await this.bootstrap(signal); return parseDetail(await this.raw(t.path, signal), t); }
+  async episodeInfo(t: Title, e: Episode, signal?: AbortSignal): Promise<FlixtorEpisodeInfo> {
+    if (!/^\d+$/.test(t.id) || !Number.isInteger(e.season) || e.season < 0 || !Number.isInteger(e.number) || e.number < 1) throw new ServiceError('CHANGED');
+    await this.bootstrap(signal);
+    return parseEpisodeInfo(await this.raw(`/ajax/info/e/${t.id}/${e.season}/${e.number}`, signal));
+  }
   async account(signal?: AbortSignal): Promise<Account> {
     await this.bootstrap(signal); const html = await this.raw('/home', signal);
     this.csrf = attr(one(document(html), 'meta[name="csrf-token"]'), 'content') || this.csrf;

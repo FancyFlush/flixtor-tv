@@ -87,6 +87,7 @@ internal class NativeCapabilities(private val activity: Activity, private val pl
                     "ready" -> JSONObject().put("version", BuildConfig.VERSION_NAME).put("versionCode", BuildConfig.VERSION_CODE).put("sdk", android.os.Build.VERSION.SDK_INT)
                         .put("commit", BuildConfig.COMMIT_SHA).put("reportUrl", BuildConfig.REPORT_URL)
                         .put("tmdb", BuildConfig.TMDB_TOKEN.isNotBlank()).put("contribution", BuildConfig.INTRODB_API_KEY.isNotBlank()).put("platform", "android")
+                        .put("voice", android.speech.SpeechRecognizer.isRecognitionAvailable(activity))
                     "http" -> http(id, args)
                     "storage.get" -> prefs.getString(validKey(args), null) ?: JSONObject.NULL
                     "storage.set" -> { val value = args.getString("value"); require(value.length <= 2_000_000); check(prefs.edit().putString(validKey(args), value).commit()); true }

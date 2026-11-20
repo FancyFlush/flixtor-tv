@@ -1,12 +1,16 @@
 package dev.personal.flixtortv
 
 import android.app.Activity
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.Gravity
 import android.view.SurfaceView
 import android.widget.FrameLayout
 import androidx.media3.common.*
+import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -15,14 +19,21 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionResult
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
 import com.google.common.util.concurrent.Futures
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.util.concurrent.Executors
 
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class NativePlayer(private val activity: Activity, root: FrameLayout, private val emit: (JSONObject) -> Unit) {
+    private data class SubtitleSource(val uri: String, val label: String)
     private val videoFrame = AspectRatioFrameLayout(activity).apply {
+        setBackgroundColor(Color.BLACK)
         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
     }
     private val surface = SurfaceView(activity)
@@ -32,10 +43,20 @@ internal class NativePlayer(private val activity: Activity, root: FrameLayout, p
     private var identity = ""
     private var checkpoint: JSONObject? = null
     private val handler = Handler(Looper.getMainLooper())
+    private val subtitleExecutor = Executors.newSingleThreadExecutor()
     private var loadControl: PlaybackBuffer? = null
+    private var subtitleSources = emptyList<SubtitleSource>()
+    private var subtitleHeaders = emptyMap<String, String>()
+    private var subtitleClient = "public"
+    private var selectedSubtitleUri: String? = null
+    private var subtitleGeneration = 0
+    private var timedCues = emptyList<TimedSubtitleCue>()
+    private var manualSubtitles = false
+    private var renderedCueText: List<String>? = null
+    private var subtitleDelayMs = 0L
     var client: (String) -> okhttp3.OkHttpClient = { okhttp3.OkHttpClient() }
     private val tick = object : Runnable {
-        override fun run() { player?.let { emit(snapshot(it)) }; handler.postDelayed(this, 250) }
+        override fun run() { player?.let { updateTimedSubtitles(it); emit(snapshot(it)) }; handler.postDelayed(this, 250) }
     }
     init {
         videoFrame.addView(surface, FrameLayout.LayoutParams(-1, -1))
@@ -52,10 +73,18 @@ internal class NativePlayer(private val activity: Activity, root: FrameLayout, p
         val uri = args.getString("uri")
         require(uri.startsWith("https://") || BuildConfig.DEBUG && uri.startsWith("asset:///qa-"))
         player?.release(); session?.release()
+        subtitleGeneration++
+        selectedSubtitleUri = null; timedCues = emptyList(); manualSubtitles = false; renderedCueText = null
+        subtitles.setCues(emptyList())
         identity = nextId
+        applyVideoFit(args.optString("videoFit", "native"))
         checkpoint = args.optJSONObject("checkpoint")
         val headers = args.optJSONObject("headers") ?: JSONObject()
         val values = headers.keys().asSequence().associateWith { headers.getString(it) }
+        subtitleHeaders = values
+        subtitleClient = args.optString("client", "public")
+        subtitleDelayMs = args.optLong("subtitleDelay", 0).coerceIn(-5000, 5000)
+        applySubtitleStyle(args.optString("subtitleSize", "medium"), args.optString("subtitleAppearance", "shadow"))
         val http = OkHttpDataSource.Factory(client(args.optString("client", "public"))).setDefaultRequestProperties(values)
         val buffer = PlaybackBuffer().apply { larger = args.optBoolean("largerBuffer") }; loadControl = buffer
         val p = ExoPlayer.Builder(activity).setLoadControl(buffer)
@@ -64,6 +93,10 @@ internal class NativePlayer(private val activity: Activity, root: FrameLayout, p
         p.setVideoSurfaceView(surface)
         p.setAudioAttributes(AudioAttributes.DEFAULT, true); p.setHandleAudioBecomingNoisy(true)
         val tracks = args.optJSONArray("captions") ?: JSONArray()
+        subtitleSources = (0 until tracks.length()).map { i ->
+            val c = tracks.getJSONObject(i)
+            SubtitleSource(c.getString("uri"), c.optString("label"))
+        }
         val captions = (0 until tracks.length()).map { i ->
             val c = tracks.getJSONObject(i)
             require(c.getString("uri").startsWith("https://"))
@@ -73,7 +106,7 @@ internal class NativePlayer(private val activity: Activity, root: FrameLayout, p
                 .setSelectionFlags(if (c.optBoolean("default")) C.SELECTION_FLAG_DEFAULT else 0).build()
         }
         p.addListener(object : Player.Listener {
-            override fun onCues(group: androidx.media3.common.text.CueGroup) { if (player === p) subtitles.setCues(group.cues) }
+            override fun onCues(group: androidx.media3.common.text.CueGroup) { if (player === p && !manualSubtitles) subtitles.setCues(group.cues) }
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (player !== p) return
                 val width = videoSize.width
@@ -91,7 +124,7 @@ internal class NativePlayer(private val activity: Activity, root: FrameLayout, p
             override fun onPlayerError(error: PlaybackException) {
                 if (player === p) emit(snapshot(p).put("error", error.errorCodeName))
             }
-            override fun onTracksChanged(tracks: Tracks) { if (player === p) emit(snapshot(p)) }
+            override fun onTracksChanged(tracks: Tracks) { if (player === p) { syncSubtitleSelection(p); emit(snapshot(p)) } }
             override fun onPlaybackStateChanged(state: Int) { if (player === p) emit(snapshot(p)) }
         })
         val mediaUri = if (BuildConfig.DEBUG && activity.intent.getBooleanExtra("solidQA", false) && uri.startsWith("https://fixture.example/")) "asset:///" + uri.substringAfterLast('/') else uri
@@ -130,6 +163,7 @@ internal class NativePlayer(private val activity: Activity, root: FrameLayout, p
             "pause" -> p.pause()
             "seek" -> p.seekTo(args.getLong("position").coerceAtLeast(0))
             "quality" -> quality(args.getInt("height"))
+            "video-fit" -> applyVideoFit(args.optString("fit", "native"))
             "buffer" -> loadControl?.larger = args.getBoolean("enabled")
             "stop" -> { suspendPlayback(); p.release(); player = null; session?.release(); session = null; subtitles.setCues(emptyList()) }
             "track" -> {
@@ -150,11 +184,89 @@ internal class NativePlayer(private val activity: Activity, root: FrameLayout, p
                 val bottom = args.optDouble("bottom", 0.08).coerceIn(0.0, 0.7)
                 subtitles.setPadding((surface.width * left).toInt(), 0, (surface.width * right).toInt(), (surface.height * bottom).toInt())
             }
+            "caption-style" -> {
+                subtitleDelayMs = args.optLong("delay", subtitleDelayMs).coerceIn(-5000, 5000)
+                applySubtitleStyle(args.optString("size", "medium"), args.optString("appearance", "shadow"))
+                updateTimedSubtitles(p)
+            }
         }
+    }
+    private fun applySubtitleStyle(size: String, appearance: String) {
+        subtitles.setApplyEmbeddedStyles(false); subtitles.setApplyEmbeddedFontSizes(false)
+        subtitles.setFractionalTextSize(when (size) { "small" -> 0.045f; "large" -> 0.07f; else -> 0.055f })
+        val background = when (appearance) {
+            "boxed" -> 0xcc000000.toInt()
+            "shadow" -> 0x22000000
+            else -> Color.TRANSPARENT
+        }
+        val edgeType = when (appearance) {
+            "outline" -> CaptionStyleCompat.EDGE_TYPE_OUTLINE
+            "shadow" -> CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW
+            else -> CaptionStyleCompat.EDGE_TYPE_NONE
+        }
+        subtitles.setStyle(CaptionStyleCompat(Color.WHITE, background, Color.TRANSPARENT, edgeType, Color.BLACK, Typeface.DEFAULT))
+    }
+    private fun syncSubtitleSelection(p: ExoPlayer) {
+        val label = p.currentTracks.groups.asSequence()
+            .filter { it.type == C.TRACK_TYPE_TEXT }
+            .flatMap { group -> (0 until group.length).asSequence().filter { group.isTrackSelected(it) }.map { group.getTrackFormat(it).label ?: group.getTrackFormat(it).language.orEmpty() } }
+            .firstOrNull()
+        val source = label?.let { selected -> subtitleSources.firstOrNull { it.label.equals(selected, true) } }
+            ?: if (label != null && subtitleSources.size == 1) subtitleSources.single() else null
+        if (source?.uri == selectedSubtitleUri) return
+        selectedSubtitleUri = source?.uri
+        subtitleGeneration++
+        val generation = subtitleGeneration
+        manualSubtitles = false; timedCues = emptyList(); renderedCueText = null
+        subtitles.setCues(emptyList())
+        if (source == null || !source.uri.startsWith("https://") || source.uri.startsWith("https://fixture.example/")) return
+        subtitleExecutor.execute {
+            try {
+                val request = Request.Builder().url(source.uri).apply { subtitleHeaders.forEach { (name, value) -> header(name, value) } }.build()
+                val cues = client(subtitleClient).newCall(request).execute().use { response ->
+                    val body = response.body
+                    if (!response.isSuccessful || body == null || body.contentLength() > 4_000_000) {
+                        if (!response.isSuccessful) Log.w(TAG, "Subtitle timing fetch returned HTTP ${response.code}")
+                        emptyList()
+                    } else {
+                        val bytes = body.byteStream().use { input ->
+                            val output = ByteArrayOutputStream()
+                            val buffer = ByteArray(8192)
+                            while (output.size() <= 4_000_000) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                            }
+                            output.toByteArray()
+                        }
+                        if (bytes.size > 4_000_000) emptyList() else SubtitleTiming.parse(String(bytes, Charsets.UTF_8))
+                    }
+                }
+                if (cues.isEmpty()) return@execute
+                handler.post {
+                    if (generation == subtitleGeneration && selectedSubtitleUri == source.uri && player === p) {
+                        timedCues = cues; manualSubtitles = true; renderedCueText = null; updateTimedSubtitles(p)
+                    }
+                }
+            } catch (error: IOException) {
+                Log.w(TAG, "Could not read subtitle timing data; using native subtitle rendering", error)
+            }
+        }
+    }
+    private fun updateTimedSubtitles(p: ExoPlayer) {
+        if (!manualSubtitles || player !== p) return
+        val active = SubtitleTiming.activeAt(timedCues, p.currentPosition, subtitleDelayMs)
+        val text = active.map { it.text }
+        if (text == renderedCueText) return
+        renderedCueText = text
+        subtitles.setCues(active.map { Cue.Builder().setText(it.text).build() })
     }
     private fun quality(height: Int) {
         require(height in listOf(0, 720, 1080, 2160))
         player?.let { it.trackSelectionParameters = it.trackSelectionParameters.buildUpon().setMaxVideoSize(Int.MAX_VALUE, if (height == 0) Int.MAX_VALUE else height).build() }
+    }
+    private fun applyVideoFit(fit: String) {
+        videoFrame.resizeMode = if (fit == "fill") AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
     }
     fun suspendPlayback() {
         player?.let { p ->
@@ -165,5 +277,6 @@ internal class NativePlayer(private val activity: Activity, root: FrameLayout, p
             p.pause()
         }
     }
-    fun close() { handler.removeCallbacks(tick); suspendPlayback(); session?.release(); player?.release(); player = null }
+    fun close() { handler.removeCallbacks(tick); subtitleGeneration++; subtitleExecutor.shutdownNow(); suspendPlayback(); session?.release(); player?.release(); player = null }
+    private companion object { const val TAG = "NativePlayer" }
 }

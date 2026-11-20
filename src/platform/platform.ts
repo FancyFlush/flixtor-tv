@@ -5,7 +5,7 @@ export interface HttpRequest {
   url: string; method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: string;
 }
 export interface HttpResponse { status: number; body: string; location?: string }
-export interface HostInfo { platform: string; version: string; versionCode: number; sdk: number; commit: string; reportUrl: string; contribution: boolean; tmdb?: boolean }
+export interface HostInfo { platform: string; version: string; versionCode: number; sdk: number; commit: string; reportUrl: string; contribution: boolean; tmdb?: boolean; voice?: boolean }
 export interface Track { id: string; type: number; label: string; selected: boolean; supported: boolean }
 export interface PlayerEvent {
   id: string; position: number; duration: number; buffered: number; playing: boolean; playRequested: boolean;

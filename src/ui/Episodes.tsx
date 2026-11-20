@@ -4,7 +4,7 @@ import { Button, palette, time } from './components';
 import { episodeKey, fraction, titleKey, type Episode, type Title, type Viewing } from '../domain/models';
 import { episodeWindowStart, nextEpisodeWindowStart, visibleEpisodeRows } from './episode-window';
 
-export function EpisodeList(props: { title: Title; episodes: Episode[]; viewing: Viewing[]; width: number; height: number; current?: Episode | null; initial?: Episode; autofocus?: boolean; play(episode: Episode): void }) {
+export function EpisodeList(props: { title: Title; episodes: Episode[]; viewing: Viewing[]; width: number; height: number; current?: Episode | null; initial?: Episode; autofocus?: boolean; play(episode: Episode): void; onHighlight?(episode: Episode): void }) {
   const selected = () => Math.max(0, props.episodes.findIndex(e => episodeKey(e) === episodeKey(props.initial || props.current)));
   const visibleRows = () => visibleEpisodeRows(props.height);
   const [cursor, setCursor] = createSignal(selected());
@@ -12,6 +12,10 @@ export function EpisodeList(props: { title: Title; episodes: Episode[]; viewing:
   const windowSize = () => visibleRows() + 2;
   const windowEpisodes = () => props.episodes.slice(windowStart(), windowStart() + windowSize());
   const selectedRow = () => Math.max(0, Math.min(cursor() - windowStart(), windowEpisodes().length - 1));
+  createEffect(() => {
+    const episode = props.episodes[cursor()];
+    if (episode) props.onHighlight?.(episode);
+  });
   createEffect(on([() => props.episodes, selected, visibleRows], () => {
     const index = selected();
     setCursor(index);

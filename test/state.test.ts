@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { importLegacy, Repository } from '../src/domain/repository';
-import { Countdown, timelineStep, WatchingSession } from '../src/features/playback/timing';
+import { DEFAULT_ANIME_BASE } from '../src/services/anime';
+import { Countdown, remoteSeek, timelineStep, WatchingSession } from '../src/features/playback/timing';
 import type { Platform } from '../src/platform/platform';
 import { mergeSegments, type Segment } from '../src/domain/models';
 function storage(fail = false) {
@@ -17,13 +18,26 @@ describe('durable state', () => {
   it('defaults legacy search poster size and persists changes', async () => {
     const { platform, values } = storage(); const repo = new Repository(platform); await repo.initialize();
     expect(repo.current.searchPosterSize).toBe('medium');
-    const legacy = JSON.parse(values.get('app')!) as Record<string, unknown>; delete legacy.searchPosterSize;
+    expect(repo.current.animeBaseUrl).toBe(DEFAULT_ANIME_BASE);
+    const legacy = JSON.parse(values.get('app')!) as Record<string, unknown>; delete legacy.searchPosterSize; delete legacy.animeBaseUrl;
     values.set('app', JSON.stringify(legacy));
     const reopened = new Repository(platform); await reopened.initialize();
     expect(reopened.current.searchPosterSize).toBe('medium');
+    expect(reopened.current.animeBaseUrl).toBe(DEFAULT_ANIME_BASE);
     await reopened.change(data => { data.searchPosterSize = 'large'; });
+    await reopened.setAnimeBaseUrl('anime.example');
     const restored = new Repository(platform); await restored.initialize();
-    expect(restored.current.searchPosterSize).toBe('large');
+    expect(restored.current.searchPosterSize).toBe('large'); expect(restored.current.animeBaseUrl).toBe('https://anime.example');
+    await expect(restored.setAnimeBaseUrl('http://anime.example')).rejects.toThrow('HTTPS');
+    expect(restored.current.animeBaseUrl).toBe('https://anime.example');
+  });
+  it('defaults and persists per-profile subtitle preferences with bounded sync delay', async () => {
+    const { platform } = storage(); const repo = new Repository(platform); await repo.initialize();
+    expect(repo.current.profiles[0]).toMatchObject({ subtitleSize: 'medium', subtitleAppearance: 'shadow', subtitleDelay: 0 });
+    expect(repo.current.profiles[0].videoFit).toBe('native');
+    await repo.updateProfile('default', { subtitleSize: 'large', subtitleAppearance: 'boxed', subtitleDelay: 5100, videoFit: 'fill' });
+    const reopened = new Repository(platform); await reopened.initialize();
+    expect(reopened.current.profiles[0]).toMatchObject({ subtitleSize: 'large', subtitleAppearance: 'boxed', subtitleDelay: 5000, videoFit: 'fill' });
   });
   it('serializes concurrent writes and survives reopen', async () => {
     const { platform } = storage(); const repo = new Repository(platform); await repo.initialize();
@@ -49,5 +63,10 @@ describe('playback time', () => {
     const active = session.start(); session.playback(retired, true, true); session.complete(active, true); expect(session.requireConfirmation(active)).toBe(false);
   });
   it('suspends countdown behind menus and fires once', () => { const c = new Countdown(); expect(c.tick(0, true, true)).toBe(false); expect(c.tick(3000, true, false)).toBe(false); expect(c.tick(10_000, true, true)).toBe(false); expect(c.tick(15_000, true, true)).toBe(true); expect(c.tick(20_000, true, true)).toBe(false); });
-  it('accelerates remote seeking only after a held repeat', () => { expect(timelineStep(1000, 5000, 0, 1_000_000)).toBe(1000); expect(timelineStep(1000, 5000, 1, 1_000_000)).toBe(50_000); });
+  it('accelerates held time adjustments only after the initial step', () => { expect(timelineStep(1000, 5000, 0, 1_000_000)).toBe(1000); expect(timelineStep(1000, 5000, 1, 1_000_000)).toBe(50_000); });
+  it('seeks exactly ten seconds and clamps remote seeks to video bounds', () => {
+    expect(remoteSeek(20_000, 100_000, -10_000)).toBe(10_000);
+    expect(remoteSeek(95_000, 100_000, 10_000)).toBe(100_000);
+    expect(remoteSeek(5_000, 100_000, -10_000)).toBe(0);
+  });
 });

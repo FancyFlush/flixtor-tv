@@ -5,6 +5,7 @@ import type { Platform, PlatformEvent, PlayerEvent } from '../src/platform/platf
 import { deviceInput } from '../src/ui/device-input';
 
 /** Development fixtures only. Production never substitutes mock networking. */
+const episodeInfoFixture = (episode: string) => `<div class="text-dark"><div class="d-flex mx-1 mt-1"><div class="text-info t14 poptitle">Chapter ${episode}</div></div><div class="d-flex mt-1 mx-2 t12">Fixture synopsis for Chapter ${episode}.</div><div class="d-flex my-1 p-1 justify-content-between t12 graybg"><div><span class="fa fa-calendar"></span> Sun, Oct 26th, 2025</div></div><div class="d-flex my-1 p-1 justify-content-between t12 graybg"><div><span class="fa fa-star"></span> 8.2 /10 (120 votes)</div><div><span class="fa fa-certificate"></span> TV-14</div></div></div>`;
 export function fixturePlatform(): Platform {
   const input = deviceInput();
   const listeners = new Set<(event: PlatformEvent) => void>();
@@ -46,11 +47,16 @@ export function fixturePlatform(): Platform {
           : catalog === 'imdbRating' ? [{ id: 'tt1234569', type, name: 'The Test Series', releaseInfo: '2026', poster: 'https://image.tmdb.org/t/p/w500/series.jpg', background: 'https://image.tmdb.org/t/p/original/series-bg.jpg', genres: ['Drama'], description: 'A fixture series.', imdbRating: '8.4' }] : [{ id: 'tt1234569', type, name: 'The Test Series', releaseInfo: '2026', poster: 'https://image.tmdb.org/t/p/w500/series.jpg', background: 'https://image.tmdb.org/t/p/original/series-bg.jpg', genres: ['Drama'], description: 'A fixture series.', imdbRating: '8.4' }];
         return JSON.stringify({ metas });
       })() : undefined;
-      const body = (args.client === 'tmdb' ? JSON.stringify(tmdbFixture(path, url.searchParams)) : undefined) ?? discovery ?? (args.client === 'anime' ? path.includes('/episode/list/') ? fixtures.animeEpisodes : path.includes('/episode/servers') ? fixtures.animeServers : path.includes('/mal/') ? fixtures.animeEmbed : ['/most-popular', '/top-airing', '/recently-updated', '/search'].includes(path) ? fixtures.anime : fixtures.animeDetail : entries[path] ?? (path.startsWith('/ajax/v4/') ? fixtures.stream : path.startsWith('/watch/movie/') ? fixtures.detail.replaceAll('class=eplist', 'class=fixture-episode') : path.startsWith('/watch/') ? fixtures.detail : path.startsWith('/show/') ? catalogFixture(fixtures.catalog, url.searchParams.get('sort'), url.searchParams.get('page')) : args.client === 'flixtor' && path.startsWith('/search/') ? fixtures.catalog : '{}'));
+      const body = (args.client === 'tmdb' ? JSON.stringify(tmdbFixture(path, url.searchParams)) : undefined) ?? discovery ?? (args.client === 'anime' ? path.includes('/episode/list/') ? fixtures.animeEpisodes : path.includes('/episode/servers') ? fixtures.animeServers : path.includes('/mal/') ? fixtures.animeEmbed : ['/most-popular', '/top-airing', '/recently-updated', '/search'].includes(path) ? fixtures.anime : fixtures.animeDetail : entries[path] ?? (path.startsWith('/ajax/info/e/') ? episodeInfoFixture(path.split('/').at(-1) || '1') : path.startsWith('/ajax/v4/') ? fixtures.stream : path.startsWith('/watch/movie/') ? fixtures.detail.replaceAll('class=eplist', 'class=fixture-episode') : path.startsWith('/watch/') ? fixtures.detail : path.startsWith('/show/') ? catalogFixture(fixtures.catalog, url.searchParams.get('sort'), url.searchParams.get('page')) : args.client === 'flixtor' && path.startsWith('/search/') ? fixtures.catalog : '{}'));
       value = { status: 200, body, location: '' };
     } else if (method === 'player.load') player = { ...player, id: String(args.id), position: Number(args.position || 0), playing: args.play !== false, playRequested: args.play !== false, error: undefined, ended: false, time: performance.now() };
     else if (method === 'player.command' && args.id === player.id) {
-      if (args.action === 'seek') player.position = Number(args.position);
+      if (args.action === 'seek') {
+        const from = player.position, position = Number(args.position);
+        player.position = position;
+        const seeks = JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]') as { from: number; position: number }[];
+        sessionStorage.setItem('flixtor-fixture:playerSeeks', JSON.stringify([...seeks.slice(-19), { from, position }]));
+      }
       if (args.action === 'play' || args.action === 'pause') player.playing = player.playRequested = args.action === 'play';
       if (args.action === 'stop') player = { ...player, id: '', playing: false, playRequested: false };
     } else if (method === 'art') {

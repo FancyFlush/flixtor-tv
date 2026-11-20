@@ -8,7 +8,7 @@ import { activeElement, activeScope, announce, FocusScope, focusElement, nodeRec
 import { editValue, pinDigit, type InputMode, type InputRequest } from './input-state';
 
 export interface FieldHandle { focus(): void; edit(key: string): void }
-export function TextField(props: { label: string; value: string; change(value: string): void; width: number; mode?: InputMode; maxLength?: number; id: string; autofocus?: boolean; activate?(): void; up?(): void; down?(): void; right?(): void; submit?(): void; handle?(handle: FieldHandle): void }) {
+export function TextField(props: { label: string; value: string; change(value: string): void; width: number; mode?: InputMode; maxLength?: number; id: string; placeholder?: string; autofocus?: boolean; activate?(): void; up?(): void; down?(): void; right?(): void; submit?(): void; handle?(handle: FieldHandle): void }) {
   let node: ElementNode | undefined, input: HTMLInputElement | undefined;
   const scope = useContext(FocusScope);
   const [focused, setFocused] = createSignal(false);
@@ -19,6 +19,7 @@ export function TextField(props: { label: string; value: string; change(value: s
     if (props.activate) { input.inputMode = 'search'; input.setAttribute('enterkeyhint', 'search'); }
     input.autocomplete = 'off'; input.spellcheck = false; input.maxLength = props.maxLength || 256; input.value = props.value;
     input.style.cssText = 'position:fixed;box-sizing:border-box;z-index:10;background:transparent;border:0;outline:0;color:#f5f8ff;padding:0 22px;font-family:Roboto,Arial,sans-serif;caret-color:#b8e9ff;';
+    input.style.setProperty('outline', '0', 'important');
     input.onfocus = () => { setFocused(true); focusElement(node); };
     input.onblur = () => setFocused(false);
     input.oninput = event => { if (!(event instanceof InputEvent) || !event.isComposing) props.change(input!.value); };
@@ -40,7 +41,7 @@ export function TextField(props: { label: string; value: string; change(value: s
       input!.setSelectionRange(Math.min(edit.caret, value.length), Math.min(edit.caret, value.length)); props.change(value);
     } });
   });
-  createEffect(() => { const value = props.value, label = props.label, disabled = activeScope() !== scope; if (input) { if (input.value !== value) input.value = value; input.setAttribute('aria-label', label); input.disabled = disabled; } });
+  createEffect(() => { const value = props.value, label = props.label, placeholder = props.placeholder, disabled = activeScope() !== scope; if (input) { if (input.value !== value) input.value = value; input.setAttribute('aria-label', label); input.placeholder = focused() ? '' : placeholder || ''; input.disabled = disabled; } });
   trackFrame(() => {
     if (!input) return; const rect = nodeRect(node);
     Object.assign(input.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px`, fontSize: `${28 * rect.height / 76}px` });
@@ -68,6 +69,7 @@ export function Keyboard(props: { edit(key: string): void; done(): void; doneLab
     onCleanup(() => app.backHandlers.delete(back));
   }
   const [symbols, setSymbols] = createSignal(!!props.numeric);
+  let lastSpaceAt = 0;
   const letters = () => symbols() ? '1234567890@.-_!?&()/+:'.split('') : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
   const columns = () => props.numeric ? 3 : 6;
   const width = () => props.width || 600, keyWidth = () => (width() - (columns() - 1) * 10) / columns();
@@ -96,7 +98,10 @@ export function Keyboard(props: { edit(key: string): void; done(): void; doneLab
     </Row>}</For>
     <Show when={!props.numeric}>
       <Row width={width()} height={68} gap={10} wrap onUp={() => vertical(rows().length, -1)} onDown={() => vertical(rows().length, 1)}>
-        <Button id={`${prefix()}-tools-0`} label="Space" width={keyWidth() * 2 + 10} onFocus={() => focused(rows().length, 0)} action={() => props.edit('Space')} />
+        <Button id={`${prefix()}-tools-0`} label="Space" width={keyWidth() * 2 + 10} onFocus={() => focused(rows().length, 0)} action={() => {
+          const now = performance.now();
+          if (now - lastSpaceAt >= 50) { lastSpaceAt = now; props.edit('Space'); }
+        }} />
         <Button id={`${prefix()}-tools-1`} label="Delete" width={keyWidth() * 2 + 10} onFocus={() => focused(rows().length, 1)} action={() => props.edit('Delete')} />
         <Button id={`${prefix()}-tools-2`} label={symbols() ? 'ABC' : '123'} width={keyWidth() * 2 + 10} onFocus={() => focused(rows().length, 2)} action={toggleSymbols} />
       </Row>
@@ -155,6 +160,10 @@ export function InputDialog(props: { request: InputRequest }) {
         <Show when={!pin}><Column width={380} height={540} gap={20} scroll="none">
           <Button label="Save" width={340} primary disabled={busy()} action={() => void submit()} />
           <Button label="Cancel" width={340} action={() => finish(null)} />
+          <Show when={app.host.voice}><Button label="Voice input" icon="microphone" width={340} action={() => app.run(async () => {
+            const next = await app.platform.call<string | null>('voice.search');
+            if (alive && next) { setValue(next); field?.focus(); }
+          })} /></Show>
           <Button label="Device keyboard" width={340} action={() => app.run(async () => {
             const next = await app.platform.call<string | null>('input', { label: request.label, value: value(), secret: request.mode === 'password', mode: request.mode });
             if (alive && next !== null) { setValue(next); field?.focus(); }

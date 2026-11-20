@@ -12,8 +12,112 @@ test('remote profiles → detail → episode → player → settings → back', 
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeAttached();
   await activate(page, 'Settings');
   await expect(page.getByRole('button', { name: /settings, Video quality/ })).toBeAttached();
-  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await expect(page).toHaveURL(/detail/);
+  await page.keyboard.press('Escape'); await expect(page).toHaveURL(/player/);
+  await page.keyboard.press('Escape'); await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeHidden();
+  await page.keyboard.press('Escape'); await expect(page).toHaveURL(/detail/);
   expect(errors).toEqual([]);
+});
+test('Back hides visible player controls, then exits on the second press', async ({ page }) => {
+  await home(page); await openTestSeries(page); await activate(page, '1. Chapter 1');
+  const settings = page.getByRole('button', { name: 'Settings', exact: true });
+  await expect(settings).toBeVisible();
+  await page.keyboard.press('Escape'); await expect(settings).toBeHidden();
+  await expect(page).toHaveURL(/player/);
+  await page.keyboard.press('Escape'); await expect(page).toHaveURL(/detail/);
+});
+test('main navigation can move right into profile and settings', async ({ page }) => {
+  await home(page);
+  const focused = page.locator('button[data-focused="true"]');
+  await page.getByRole('button', { name: 'Search', exact: true }).focus();
+  await expect(focused).toHaveText('Search');
+  await page.keyboard.press('ArrowRight'); await expect(focused).toHaveText('My profile');
+  await page.keyboard.press('ArrowRight'); await expect(focused).toHaveText('Settings');
+  await page.keyboard.press('ArrowLeft'); await expect(focused).toHaveText('My profile');
+});
+test('Anime source URL can be changed and reset in main Settings', async ({ page }) => {
+  await home(page); await activate(page, 'Settings'); await expect(page).toHaveURL(/settings/);
+  await expect(page.getByRole('button', { name: 'Anime', exact: true })).toHaveCount(2);
+  const animeSection = page.getByRole('button', { name: 'Anime', exact: true }).last(); await animeSection.focus(); await page.keyboard.press('Enter');
+  await activate(page, /Anime source URL/);
+  await page.getByRole('textbox', { name: 'Anime source URL', exact: true }).fill('anime.example');
+  await activate(page, 'Save');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('flixtor-fixture:app')!).animeBaseUrl)).toBe('https://anime.example');
+  await activate(page, 'Reset Anime source URL');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('flixtor-fixture:app')!).animeBaseUrl)).toBe('https://hianime.fm');
+});
+test('hidden player controls map D-pad left and right to ten-second seeks', async ({ page }) => {
+  await home(page); await page.evaluate(() => sessionStorage.removeItem('flixtor-fixture:playerSeeks')); await openTestSeries(page); await activate(page, '1. Chapter 1');
+  const timeline = page.getByRole('slider', { name: 'Seek', exact: true, includeHidden: true });
+  await page.waitForTimeout(3500); await expect(timeline).toBeHidden();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]').length)).toBe(1);
+  const seeks = () => page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]') as { from: number; position: number }[]);
+  expect((await seeks())[0].position - (await seeks())[0].from).toBeGreaterThan(8000);
+  expect((await seeks())[0].position - (await seeks())[0].from).toBeLessThan(12_000);
+  await expect(timeline).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeHidden();
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]').length)).toBe(2);
+  expect((await seeks())[1].position - (await seeks())[1].from).toBeGreaterThan(-12_000);
+  expect((await seeks())[1].position - (await seeks())[1].from).toBeLessThan(-8000);
+  await page.keyboard.down('ArrowRight');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]').length)).toBe(3);
+  await page.waitForTimeout(3100);
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', repeat: true, bubbles: true, cancelable: true })));
+  await page.keyboard.up('ArrowRight');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]').length)).toBe(4);
+  expect((await seeks())[3].position - (await seeks())[3].from).toBeGreaterThan(58_000);
+  expect((await seeks())[3].position - (await seeks())[3].from).toBeLessThan(62_000);
+});
+test('timeline seeks automatically after three seconds without an OK press', async ({ page }) => {
+  await home(page); await page.evaluate(() => sessionStorage.removeItem('flixtor-fixture:playerSeeks')); await openTestSeries(page); await activate(page, '1. Chapter 1');
+  const timeline = page.getByRole('slider', { name: 'Seek', exact: true });
+  await timeline.focus(); await expect(timeline).toBeFocused();
+  const original = Number(await timeline.inputValue());
+  await page.keyboard.press('ArrowRight');
+  const target = Number(await timeline.inputValue());
+  expect(target - original).toBe(30_000);
+  await page.waitForTimeout(2500);
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]'))).toEqual([]);
+  await expect.poll(async () => page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]').length)).toBe(1);
+  const seek = await page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]')[0] as { from: number; position: number });
+  expect(Math.abs(seek.position - target)).toBeLessThan(1000);
+});
+test('player seek buttons jump one minute and repeat while OK is held', async ({ page }) => {
+  await home(page); await openTestSeries(page); await activate(page, '1. Chapter 1');
+  await page.evaluate(() => sessionStorage.removeItem('flixtor-fixture:playerSeeks'));
+  const forward = page.getByRole('button', { name: '+1 minute', exact: true });
+  await forward.focus(); await page.keyboard.press('Enter');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]').length)).toBe(1);
+  const first = await page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]')[0] as { from: number; position: number });
+  expect(first.position - first.from).toBe(60_000);
+  await page.evaluate(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })));
+  await expect.poll(async () => page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]').length)).toBe(2);
+  const second = await page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:playerSeeks') || '[]')[1] as { from: number; position: number });
+  expect(second.position).toBe(120_000);
+});
+test('subtitle settings offer three sizes and appearances and persist both sync directions', async ({ page }) => {
+  await home(page); await openTestSeries(page); await activate(page, '1. Chapter 1');
+  await activate(page, 'Settings'); await activate(page, /settings, Subtitles/);
+  await expect(page.getByRole('button', { name: /subtitle settings, Subtitle track/ })).toBeAttached();
+  await activate(page, 'Text size');
+  for (const size of ['Small', 'Medium', 'Large']) await expect(page.getByRole('button', { name: new RegExp(`subtitle size, ${size}`, 'i') })).toBeAttached();
+  await activate(page, 'Large');
+  await activate(page, 'Appearance'); await activate(page, 'Outline');
+  await activate(page, 'Subtitle sync'); await activate(page, 'Later by 0.1 seconds');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('flixtor-fixture:app')!).profiles[0].subtitleDelay)).toBe(100);
+  await activate(page, 'Earlier by 0.1 seconds');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('flixtor-fixture:app')!).profiles[0].subtitleDelay)).toBe(0);
+  const profile = await page.evaluate(() => JSON.parse(localStorage.getItem('flixtor-fixture:app')!).profiles[0]);
+  expect(profile).toMatchObject({ subtitleSize: 'large', subtitleAppearance: 'outline', subtitleDelay: 0 });
+});
+test('playback settings switch between fill screen and native aspect ratio', async ({ page }) => {
+  await home(page); await openTestSeries(page); await activate(page, '1. Chapter 1');
+  await activate(page, 'Settings'); await activate(page, /settings, Video fit/);
+  await activate(page, 'Fill screen');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('flixtor-fixture:app')!).profiles[0].videoFit)).toBe('fill');
+  await activate(page, 'Video fit'); await activate(page, 'Native aspect ratio');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('flixtor-fixture:app')!).profiles[0].videoFit)).toBe('native');
 });
 test('detail remote selects an episode before playback', async ({ page }) => {
   await home(page); await openTestSeries(page);
@@ -21,7 +125,11 @@ test('detail remote selects an episode before playback', async ({ page }) => {
   await expect(focused).toHaveText('Play');
   await page.keyboard.press('ArrowDown'); await expect(focused).toHaveText('Season 1');
   await page.keyboard.press('ArrowDown'); await expect(focused).toHaveText('1. Chapter 1');
+  await expect.poll(() => page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:requests') || '[]').filter((path: string) => path.startsWith('/ajax/info/e/')).at(-1))).toBe('/ajax/info/e/1/1/1');
   await page.keyboard.press('ArrowDown'); await expect(focused).toHaveText('2. Chapter 2');
+  await expect.poll(() => page.evaluate(() => JSON.parse(sessionStorage.getItem('flixtor-fixture:requests') || '[]').filter((path: string) => path.startsWith('/ajax/info/e/')).at(-1))).toBe('/ajax/info/e/1/1/2');
+  await page.keyboard.press('ArrowLeft'); await expect(focused).toHaveText('2. Chapter 2');
+  await page.keyboard.press('ArrowRight'); await expect(focused).toHaveText('2. Chapter 2');
   await page.keyboard.press('ArrowUp'); await expect(focused).toHaveText('1. Chapter 1');
   await page.keyboard.press('ArrowUp'); await expect(focused).toHaveText('Season 1');
   await page.keyboard.press('Enter');
@@ -86,7 +194,7 @@ test('playback failure retry closes modal and account action leaves player', asy
   await page.evaluate(() => localStorage.removeItem('flixtor-fixture:httpOverrides'));
   await activate(page, /Try again/); await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeAttached();
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await expect(page).toHaveURL(/detail/);
   await page.evaluate(() => localStorage.setItem('flixtor-fixture:httpOverrides', JSON.stringify({ '/ajax/v4/e/1/1/1': { status: 502, body: '' } })));
   await activate(page, '1. Chapter 1');
   await activate(page, /Check account in Settings/); await expect(page).toHaveURL(/settings\/account/);
@@ -230,6 +338,16 @@ test('search keeps entry inline and Right moves from the field to results', asyn
   const bounds = await page.getByRole('button', { name: 'The Test Series', exact: true }).boundingBox();
   expect(bounds).not.toBeNull(); expect(bounds!.height).toBeGreaterThan(bounds!.width * 1.3);
 });
+test('search voice fills and submits the recognized text', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('flixtor-fixture:voice', JSON.stringify({ text: 'Northbound' })));
+  await home(page); await activate(page, 'Search');
+  const voice = page.getByRole('button', { name: 'Voice search', exact: true });
+  await expect(voice).toBeAttached();
+  await activate(page, 'Voice search');
+  await expect(page).toHaveURL(/q=Northbound/);
+  await expect(page.getByRole('textbox', { name: 'Search films and TV shows', exact: true })).toHaveValue('Northbound');
+  await expect(page.getByRole('button', { name: 'The Test Series', exact: true })).toBeAttached();
+});
 test('screen-fit Cancel discards draft and Save persists it', async ({ page }) => {
   await home(page); await activate(page, 'Settings'); await activate(page, 'Display'); await activate(page, /Display, Adjust screen fit/);
   await activate(page, 'Increase horizontal'); await activate(page, 'Cancel');
@@ -246,6 +364,6 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1280, height: 72
     await page.getByRole('button', { name: '2. Chapter 2', exact: true }).click(); await expect(page).toHaveURL(/player/);
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.getByRole('button', { name: /settings, Subtitles/ }).click();
-    await expect(page.getByRole('button', { name: /subtitles, Off/ })).toBeAttached();
+    await expect(page.getByRole('button', { name: /subtitle settings, Subtitle track/ })).toBeAttached();
   });
 }

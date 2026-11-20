@@ -5,6 +5,7 @@ import json
 import os
 import re
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 
@@ -27,8 +28,10 @@ with tempfile.TemporaryDirectory() as private:
     key.chmod(0o600)
     env["TV_KEYSTORE"] = str(key)
     subprocess.run([str(root / "android/gradlew"), ":app:assembleRelease", "--console=plain"], cwd=root / "android", env=env, check=True)
-apk = root / "android/app/build/outputs/apk/release/app-release.apk"
+release_dir = root / "android/app/build/outputs/apk/release"
+apk = release_dir / "flixtor.apk"
+shutil.copy2(release_dir / "app-release.apk", apk)
 metadata = {"versionCode": version_code, "versionName": version, "minSdk": 29,
-            "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "commit": env["GITHUB_SHA"],
+            "sha256": hashlib.sha256((release_dir / "app-release.apk").read_bytes()).hexdigest(), "commit": env["GITHUB_SHA"],
             "apkUrl": f"https://github.com/FancyFlush/flixtor-tv/releases/download/{tag}/app-release.apk"}
 (root / "release.json").write_text(json.dumps(metadata, indent=2) + "\n")

@@ -32,6 +32,7 @@ export function AppRoot(props: { platform: Platform; host: HostInfo; repo: Repos
 function Shell(props: ParentProps) {
   const app = useApp(), navigate = useNavigate(), location = useLocation();
   const [exit, setExit] = createSignal(false), [profileMenu, setProfileMenu] = createSignal(false);
+  let playerBackAt = 0, remoteSeekKey: string | undefined, remoteSeekStartedAt = 0;
   app.navigate = path => navigate(path);
   const playback = createPlayback(app.platform, app.repo, app.flixtor, app.anime, app.segments, app.profileId,
     destination => destination ? navigate(destination) : navigate(-1), account => {
@@ -49,31 +50,53 @@ function Shell(props: ParentProps) {
     Config.animationsEnabled = !reduced; setReducedMotion(reduced); setReducedTransparency(settings['display:transparency'] === 'reduced');
   });
   function back() {
-    if ([...app.backHandlers.values()].reverse().some(handler => handler())) return;
+    if ([...app.backHandlers.values()].reverse().some(handler => handler())) { playerBackAt = 0; return; }
     if (isPlayer()) {
-      if (playback.state.bufferAhead) { void playback.buffer(false); return; }
-      if (playback.state.stillWatching !== undefined || playback.state.chooser) { void playback.stop(); return; }
-      if (playback.state.preview !== undefined) { playback.preview(); return; }
-      if (playback.state.menu) { playback.menu(['settings', 'episodes'].includes(playback.state.menu) ? '' : 'settings'); return; }
-      if (playback.state.countdown !== undefined) { playback.cancelNext(); return; }
-      if (!playback.state.controls) { playback.interact(); return; }
-      void playback.stop(); return;
+      if (playback.state.bufferAhead) { playerBackAt = 0; void playback.buffer(false); return; }
+      if (playback.state.stillWatching !== undefined || playback.state.chooser) { playerBackAt = 0; void playback.stop(); return; }
+      if (playback.state.preview !== undefined) { playerBackAt = 0; playback.preview(); return; }
+      if (playback.state.menu) {
+        playerBackAt = 0;
+        const menu = playback.state.menu;
+        playback.menu(['settings', 'episodes'].includes(menu) ? '' : ['subtitle-size', 'subtitle-appearance', 'subtitle-sync', 'subtitle-tracks'].includes(menu) ? 'subtitle-settings' : 'settings');
+        return;
+      }
+      if (playback.state.countdown !== undefined) { playerBackAt = 0; playback.cancelNext(); return; }
+      const now = performance.now();
+      if (playerBackAt && now - playerBackAt <= 2000) { playerBackAt = 0; void playback.stop(); return; }
+      playerBackAt = now;
+      if (playback.state.controls) playback.hideControls(); else playback.interact();
+      return;
     }
+    playerBackAt = 0;
     if (location.pathname === '/home' || profiles()) setExit(true); else navigate(-1);
   }
   const media = (code: number) => {
     if (!isPlayer() || activeScope() !== 'screen' || document.querySelector('dialog[open]')) return;
+    playerBackAt = 0;
     playback.interact();
     if ([85, 126, 127].includes(code)) void playback.command(code === 126 || code === 85 && !playback.state.event?.playing ? 'play' : 'pause');
     if (code === 87) void playback.nextEpisode();
     if ([88, 89, 90].includes(code)) void playback.command('seek', { position: Math.max(0, Math.min(playback.state.event?.duration || 0, (playback.state.event?.position || 0) + (code === 90 ? 10_000 : -10_000))) });
   };
   const unsubscribe = app.platform.onEvent(event => { if (event.type === 'key') { const code = (event.value as { code: number }).code; if (code === 4) back(); else media(code); } });
+  const pointer = () => { if (isPlayer()) playerBackAt = 0; };
   const keydown = (event: KeyboardEvent) => {
     if (document.querySelector('dialog[open]') || event.isComposing) return;
     const editable = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
-    if (event.repeat && ['Enter', ' ', 'Escape', 'BrowserBack'].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+    if (event.repeat && ['Enter', ' ', 'Escape', 'BrowserBack'].includes(event.key)) {
+      if (event.key === 'Enter' && isPlayer() && !playback.state.menu && playback.state.controls) {
+        const direction = Number((document.activeElement as HTMLElement | null)?.dataset.seekRepeat);
+        if (direction === -1 || direction === 1) {
+          event.preventDefault(); event.stopImmediatePropagation(); playerBackAt = 0;
+          void playback.seekBy(direction * 60_000);
+          return;
+        }
+      }
+      event.preventDefault(); event.stopImmediatePropagation(); return;
+    }
     if (event.key === 'Escape' || event.key === 'BrowserBack') { event.preventDefault(); event.stopImmediatePropagation(); back(); return; }
+    if (isPlayer()) playerBackAt = 0;
     if (event.key === 'Tab') {
       const controls = [...document.querySelectorAll<HTMLElement>(`[data-scope="${activeScope()}"]`)].filter(el => !el.hidden && !(el as HTMLButtonElement).disabled && el.tabIndex >= 0);
       if (controls.length) { const index = controls.indexOf(document.activeElement as HTMLElement); const next = (index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length; event.preventDefault(); event.stopImmediatePropagation(); controls[next].focus(); }
@@ -83,12 +106,25 @@ function Shell(props: ParentProps) {
     if (event.key === 'Enter') event.preventDefault();
     if (event.key === '/' && activeScope() === 'screen' && !isPlayer() && !profiles()) { event.preventDefault(); event.stopImmediatePropagation(); navigate('/search'); }
     if (isPlayer()) {
+      if (!playback.state.controls && !playback.state.menu && activeScope() === 'screen' && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!event.repeat || remoteSeekKey !== event.key) {
+          remoteSeekKey = event.key; remoteSeekStartedAt = performance.now();
+        }
+        const interval = performance.now() - remoteSeekStartedAt > 3000 ? 60_000 : 10_000;
+        const delta = event.key === 'ArrowRight' ? interval : -interval;
+        void playback.seekHidden(delta);
+        return;
+      }
       playback.interact();
       if (event.key === ' ' || event.key === 'MediaPlayPause') { event.preventDefault(); event.stopImmediatePropagation(); media(85); }
     }
   };
+  const keyup = (event: KeyboardEvent) => { if (event.key === remoteSeekKey) remoteSeekKey = undefined; };
+  window.addEventListener('pointerdown', pointer, true);
   window.addEventListener('keydown', keydown, true);
-  onCleanup(() => { unsubscribe(); window.removeEventListener('keydown', keydown, true); playback.dispose(); });
+  window.addEventListener('keyup', keyup, true);
+  onCleanup(() => { unsubscribe(); window.removeEventListener('pointerdown', pointer, true); window.removeEventListener('keydown', keydown, true); window.removeEventListener('keyup', keyup, true); playback.dispose(); });
   onMount(() => { if (app.host.platform === 'android') void app.updates.check(); });
   createEffect(() => { if (app.notice()) announce(app.notice()); });
   const scale = () => Math.min((1920 * (1 - 2 * app.data.fit.horizontal / 100)) / 1728, (1080 * (1 - 2 * app.data.fit.vertical / 100)) / 972);
@@ -99,14 +135,19 @@ function Shell(props: ParentProps) {
       <Show when={!isPlayer()} fallback={props.children}>
         <Column x={1920 * app.data.fit.horizontal / 100} y={1080 * app.data.fit.vertical / 100} width={1728} height={972} scale={scale()} pivot={0} gap={30} scroll="none">
           <Show when={navVisible()}><Row width={1728} height={94} gap={30} scroll="none">
-            <text skipFocus width={190} height={68} fontSize={37} fontFamily="Roboto700" color={palette.foreground}>FLIXTOR</text>
+            <view skipFocus x={0} y={8} width={190} height={51} src="./flixtor-logo.png" imageType="regular" />
             <view width={1132} height={86}><Glass width={1132} height={86} radius={43} />
               <Show when={nav.some(([path]) => location.pathname === '/' + path)}><view skipFocus x={16 + nav.slice(0, Math.max(0, nav.findIndex(([path]) => location.pathname === '/' + path))).reduce((sum, entry) => sum + entry[2] + 4, 0)} y={9} width={nav.find(([path]) => location.pathname === '/' + path)?.[2] || 145} height={68} color={0x71859b66} borderRadius={34} transition={{ x: motion.slide, width: motion.slide }} /></Show>
               <Row x={16} y={9} width={1100} height={68} gap={4}>
-              {nav.map(([path, label, width, icon]) => <Button id={`nav-${path}`} label={label} width={width} fontSize={24} icon={icon} quiet selected={location.pathname === '/' + path} selectionFill={false} action={() => navigate('/' + path)} />)}
+              {nav.map(([path, label, width, icon], index) => <Button id={`nav-${path}`} label={label} width={width} fontSize={24} icon={icon} quiet selected={location.pathname === '/' + path} selectionFill={false}
+                onLeft={() => index > 0 ? restoreFocus(`nav-${nav[index - 1][0]}`) : true}
+                onRight={() => index + 1 < nav.length ? restoreFocus(`nav-${nav[index + 1][0]}`) : restoreFocus('profile-menu')}
+                action={() => navigate('/' + path)} />)}
             </Row></view>
-            <Button label={app.profile()?.name || 'Profiles'} width={68} icon="person" iconOnly id="profile-menu" action={() => setProfileMenu(true)} />
-            <Button label="Settings" icon="settings" iconOnly width={68} action={() => navigate('/settings')} />
+            <Button label={app.profile()?.name || 'Profiles'} width={68} icon="person" iconOnly id="profile-menu"
+              onLeft={() => restoreFocus('nav-search')} onRight={() => restoreFocus('settings-menu')} action={() => setProfileMenu(true)} />
+            <Button label="Settings" icon="settings" iconOnly width={68} id="settings-menu"
+              onLeft={() => restoreFocus('profile-menu')} onRight={() => true} action={() => navigate('/settings')} />
           </Row></Show>
           <MaskedViewport width={1728} height={navVisible() ? 848 : 972} vertical
             onUp={() => navVisible() && restoreFocus(`nav-${nav.some(([path]) => location.pathname === '/' + path) ? location.pathname.slice(1) : 'home'}`)}>{props.children}</MaskedViewport>

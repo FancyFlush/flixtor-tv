@@ -9,8 +9,8 @@ android {
         applicationId = "dev.personal.flixtortv"
         minSdk = 29
         targetSdk = 34
-        versionCode = (providers.environmentVariable("TV_VERSION_CODE").orNull?.trim()?.takeIf { it.isNotEmpty() } ?: "1000").toInt()
-        versionName = providers.environmentVariable("TV_VERSION_NAME").orNull?.trim()?.takeIf { it.isNotEmpty() } ?: "1.0.0"
+        versionCode = (providers.environmentVariable("TV_VERSION_CODE").orNull?.trim()?.takeIf { it.isNotEmpty() } ?: "1002").toInt()
+        versionName = providers.environmentVariable("TV_VERSION_NAME").orNull?.trim()?.takeIf { it.isNotEmpty() } ?: "1.0.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "COMMIT_SHA", "\"${providers.environmentVariable("TV_COMMIT_SHA").orElse("local").get()}\"")
         buildConfigField("String", "REPORT_URL", "\"${providers.environmentVariable("TV_REPORT_URL").orElse("").get()}\"")

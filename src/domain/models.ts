@@ -15,7 +15,13 @@ export interface Caption { uri: string; label: string; mime: string; default?: b
 export interface AnimeMapping { malId: number; episode: number }
 export interface Stream { uri: string; captions: Caption[]; headers: Record<string, string>; mime?: string; animeMapping?: AnimeMapping }
 export interface Viewing { title: Title; episode?: Episode | null; position: number; duration: number; version?: AnimeVersion | null }
-export interface Profile { id: string; name: string; avatar: number; quality: number; autoplay: boolean; locked: boolean; largerBuffer: boolean }
+export type SubtitleSize = 'small' | 'medium' | 'large';
+export type SubtitleAppearance = 'shadow' | 'outline' | 'boxed';
+export type VideoFit = 'native' | 'fill';
+export interface Profile {
+  id: string; name: string; avatar: number; quality: number; autoplay: boolean; locked: boolean; largerBuffer: boolean;
+  subtitleSize?: SubtitleSize; subtitleAppearance?: SubtitleAppearance; subtitleDelay?: number; videoFit?: VideoFit;
+}
 export type SkipAction = 'ASK' | 'AUTO' | 'OFF';
 export type SegmentType = 'intro' | 'recap' | 'outro' | 'post_credits' | 'mixed-op' | 'mixed-ed' | 'custom';
 export interface Segment { id: string; type: SegmentType; typeId: string; start: number; end: number; action?: SkipAction; source?: 'LOCAL' | 'INTRODB' | 'ANISKIP' }

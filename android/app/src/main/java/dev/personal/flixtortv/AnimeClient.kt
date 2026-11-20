@@ -98,7 +98,7 @@ class AnimeClient internal constructor(mediaClient: OkHttpClient? = null,
 }
 
 internal object AnimeParser {
-    const val BASE = "https://hianime.at"
+    const val BASE = "https://hianime.fm"
     fun safeUrl(value: String): String {
         val url = value.toHttpUrl()
         require(url.scheme == "https" && url.username.isEmpty() && url.password.isEmpty() && url.port == 443)

@@ -43,8 +43,8 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "==> Downloading newest release of ${REPO} ..."
 TAG="$(gh release view -R "$REPO" --json tagName -q .tagName)"
-gh release download "$TAG" -R "$REPO" -p app-release.apk -p release.json -D "$TMP_DIR"
-APK="${TMP_DIR}/app-release.apk"
+gh release download "$TAG" -R "$REPO" -p flixtor.apk -p release.json -D "$TMP_DIR"
+APK="${TMP_DIR}/flixtor.apk"
 RELEASE_JSON="${TMP_DIR}/release.json"
 echo "==> Release: ${TAG}"
 

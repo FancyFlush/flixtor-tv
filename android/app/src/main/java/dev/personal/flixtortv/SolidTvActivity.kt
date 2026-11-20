@@ -2,9 +2,13 @@ package dev.personal.flixtortv
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.Manifest
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.view.KeyEvent
 import android.view.ViewGroup
 import android.webkit.WebResourceRequest
@@ -29,6 +33,7 @@ class SolidTvActivity : Activity() {
     private var recovery = 0
     private var ready = false
     private var destroyed = false
+    private var voiceRequest: Pair<String, (JSONObject) -> Unit>? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -116,6 +121,25 @@ class SolidTvActivity : Activity() {
                     } else false
                 }
                 edit.requestFocus()
+            } else if (method == "voice.search") {
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Search")
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                }
+                if (!SpeechRecognizer.isRecognitionAvailable(this) || intent.resolveActivity(packageManager) == null) {
+                    reply.postMessage(response(id, JSONObject.NULL).toString())
+                } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    voiceRequest = id to { value -> reply.postMessage(value.toString()) }
+                    requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), VOICE_PERMISSION)
+                } else {
+                    voiceRequest = id to { value -> reply.postMessage(value.toString()) }
+                    try { startActivityForResult(intent, VOICE_REQUEST) }
+                    catch (_: Exception) {
+                        voiceRequest = null
+                        reply.postMessage(response(id, JSONObject.NULL).toString())
+                    }
+                }
             } else capabilities.call(id, method, args) { result -> reply.postMessage(result.toString()) }
         }
         root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -124,6 +148,36 @@ class SolidTvActivity : Activity() {
         web.requestFocus()
     }
     private fun response(id: String, value: Any?) = JSONObject().put("v", 1).put("id", id).put("value", value)
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != VOICE_REQUEST) return
+        val request = voiceRequest ?: return
+        voiceRequest = null
+        val text = if (resultCode == Activity.RESULT_OK)
+            data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        else null
+        request.second(response(request.first, text))
+    }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != VOICE_PERMISSION) return
+        val request = voiceRequest ?: return
+        voiceRequest = null
+        if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Search")
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            }
+            try {
+                voiceRequest = request.first to request.second
+                startActivityForResult(intent, VOICE_REQUEST)
+            } catch (_: Exception) {
+                voiceRequest = null
+                request.second(response(request.first, JSONObject.NULL))
+            }
+        } else request.second(response(request.first, JSONObject.NULL))
+    }
     private fun emit(type: String, value: JSONObject) {
         if (!ready || destroyed || isFinishing || !::web.isInitialized) return
         runOnUiThread { if (!destroyed && ready && !isFinishing) web.evaluateJavascript("window.__platformEvent?.(${JSONObject().put("type", type).put("value", value)});", null) }
@@ -153,5 +207,9 @@ class SolidTvActivity : Activity() {
         if (::player.isInitialized) player.close()
         if (::web.isInitialized) web.destroy()
         super.onDestroy()
+    }
+    companion object {
+        private const val VOICE_REQUEST = 9123
+        private const val VOICE_PERMISSION = 9124
     }
 }

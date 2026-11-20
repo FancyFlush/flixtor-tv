@@ -1,5 +1,5 @@
 import { createStore, unwrap } from 'solid-js/store';
-import { Countdown, WatchingSession, endingEligible } from './timing';
+import { Countdown, WatchingSession, endingEligible, remoteSeek } from './timing';
 import { episodeKey, failureOf, finished, mergeSegments, orderedEpisodes, playbackKey, titleKey, type Account, type AnimeVersion, type Detail, type Episode, type Failure, type Segment, type Stream } from '../../domain/models';
 import type { Platform, PlayerEvent } from '../../platform/platform';
 import type { Repository } from '../../domain/repository';
@@ -10,16 +10,63 @@ import type { SegmentService } from '../../services/segments';
 export function createPlayback(platform: Platform, repo: Repository, flixtor: FlixtorService, anime: AnimeService, segments: SegmentService, profileId: () => string, leave: (destination?: string) => void, accountChanged: (account: Account) => void = () => {}) {
   const [state, set] = createStore<{
     detail?: Detail; episode?: Episode | null; version?: AnimeVersion; id: string; loading: boolean; error?: Failure;
-    event?: PlayerEvent; controls: boolean; menu: string; preview?: number; regions: Segment[]; segmentsUnavailable: boolean;
+    event?: PlayerEvent; controls: boolean; menu: string; preview?: number; seekHud: boolean; seekHudPosition?: number; regions: Segment[]; segmentsUnavailable: boolean;
     chooser: boolean; available: AnimeVersion[]; stillWatching?: number; countdown?: number; bufferAhead: boolean; bufferReady: boolean; bufferStalled: boolean;
     undo?: { position: number; type: string; until: number };
-  }>({ id: '', loading: false, controls: true, menu: '', regions: [], segmentsUnavailable: false, chooser: false, available: [], bufferAhead: false, bufferReady: false, bufferStalled: false });
+  }>({ id: '', loading: false, controls: true, menu: '', seekHud: false, regions: [], segmentsUnavailable: false, chooser: false, available: [], bufferAhead: false, bufferReady: false, bufferStalled: false });
   let request = 0, loadSequence = 0, abort = new AbortController(), source: Stream | undefined, identityProfile = '', savedAt = 0, interactionAt = performance.now(), foreground = true;
   let recoveryUsed = false, recoveryPlayback = 0, resumeAllowed = true, countdown = new Countdown(), skipped = new Set<string>(), bufferResume = false, bufferGrowth = 0, bufferAt = 0, segmentDuration = 0;
+  let previewTimer: ReturnType<typeof setTimeout> | undefined, seekHudTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingRemoteSeek: { position: number; at: number } | undefined;
   const attendance = new WatchingSession(() => performance.now());
   const profile = () => repo.current.profiles.find(p => p.id === identityProfile);
   const current = (token: number, signal: AbortSignal) => token === request && !signal.aborted && identityProfile === profileId();
-  function command(action: string, args: Record<string, unknown> = {}) { if (action === 'seek') { countdown.reset(); set('countdown', undefined); } return platform.call('player.command', { id: state.id, action, ...args }); }
+  function clearSeekHud() {
+    if (seekHudTimer) clearTimeout(seekHudTimer);
+    seekHudTimer = undefined;
+    set({ seekHud: false, seekHudPosition: undefined });
+  }
+  function showSeekHud(position: number) {
+    if (seekHudTimer) clearTimeout(seekHudTimer);
+    set({ seekHud: true, seekHudPosition: position });
+    seekHudTimer = setTimeout(clearSeekHud, 3000);
+  }
+  function sendSeek(position: number, keepRemoteTarget = false) {
+    if (!keepRemoteTarget) pendingRemoteSeek = undefined;
+    countdown.reset(); set('countdown', undefined);
+    return platform.call('player.command', { id: state.id, action: 'seek', position });
+  }
+  function seekRemote(delta: number, showHud: boolean) {
+    const event = state.event;
+    if (!event || !state.id) return Promise.resolve();
+    const now = performance.now();
+    const base = pendingRemoteSeek && now - pendingRemoteSeek.at <= 1500 ? pendingRemoteSeek.position : event.position;
+    const position = remoteSeek(base, event.duration, delta);
+    attendance.interact(); interactionAt = now;
+    pendingRemoteSeek = { position, at: now };
+    if (showHud) showSeekHud(position); else clearSeekHud();
+    return sendSeek(position, true);
+  }
+  function command(action: string, args: Record<string, unknown> = {}) {
+    if (action === 'seek') return sendSeek(Number(args.position || 0));
+    return platform.call('player.command', { id: state.id, action, ...args });
+  }
+  async function commitSeek() {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = undefined;
+    const position = state.preview;
+    if (position === undefined) return;
+    set('preview', undefined);
+    await sendSeek(position);
+  }
+  function preview(position?: number) {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = undefined;
+    if (position === undefined) { set('preview', undefined); return; }
+    attendance.interact(); interactionAt = performance.now();
+    set('preview', Math.max(0, Math.min(state.event?.duration || 0, position)));
+    previewTimer = setTimeout(() => { previewTimer = undefined; void commitSeek(); }, 3000);
+  }
   function save() {
     const e = state.event, d = state.detail; if (!e || !d || e.id !== state.id) return Promise.resolve();
     return repo.progress(identityProfile, { title: unwrap(d.title), episode: unwrap(state.episode), version: state.version, position: e.ended ? e.duration : e.position, duration: e.duration });
@@ -50,6 +97,8 @@ export function createPlayback(platform: Platform, repo: Repository, flixtor: Fl
     try { await platform.call('player.load', { ...source, id, client: detail.title.source === 'HIANIME' ? 'anime' : 'flixtor', position,
       play: play && resumeAllowed && foreground && !attendance.pending && !attendance.finished,
       quality: p?.quality ?? 0, largerBuffer: p?.largerBuffer ?? false,
+      subtitleSize: p?.subtitleSize ?? 'medium', subtitleAppearance: p?.subtitleAppearance ?? 'shadow', subtitleDelay: p?.subtitleDelay ?? 0,
+      videoFit: p?.videoFit ?? 'native',
       checkpoint: { profileId: identityProfile, title: detail.title, episode: episode ?? null, version: state.version ?? null } }, signal);
     } catch (error) {
       // A native load may fail after creating its player. Retire it before
@@ -77,10 +126,11 @@ export function createPlayback(platform: Platform, repo: Repository, flixtor: Fl
     const previousId = state.id, progress = save();
     const stopped = previousId ? platform.call('player.command', { id: previousId, action: 'stop' }) : Promise.resolve();
     abort.abort(); abort = new AbortController(); const token = ++request, signal = abort.signal;
+    if (previewTimer) clearTimeout(previewTimer); previewTimer = undefined; pendingRemoteSeek = undefined; clearSeekHud();
     identityProfile = profileId(); source = undefined; segmentDuration = 0; savedAt = 0; skipped = new Set(); countdown = new Countdown(); recoveryUsed = false; recoveryPlayback = 0;
     attendance.start(automatic); resumeAllowed = foreground; interactionAt = performance.now();
     set({ detail, episode, version, id: '', loading: true, error: undefined, event: undefined, controls: true, menu: '', regions: [], segmentsUnavailable: false,
-      chooser: false, available: [], preview: undefined, countdown: undefined, stillWatching: undefined, bufferAhead: false, bufferReady: false, bufferStalled: false, undo: undefined });
+      chooser: false, available: [], preview: undefined, seekHud: false, seekHudPosition: undefined, countdown: undefined, stillWatching: undefined, bufferAhead: false, bufferReady: false, bufferStalled: false, undo: undefined });
     try {
       await Promise.all([progress, stopped]);
       if (!current(token, signal)) return;
@@ -132,10 +182,14 @@ export function createPlayback(platform: Platform, repo: Repository, flixtor: Fl
     if (event.type === 'lifecycle') {
       foreground = (event.value as { foreground: boolean }).foreground;
       attendance.playback(attendance.token, state.event?.playing ?? false, foreground);
-      if (!foreground) { resumeAllowed = false; recoveryPlayback = 0; void save(); set({ menu: '', bufferAhead: false, undo: undefined }); } else set('controls', true);
+      if (!foreground) { resumeAllowed = false; recoveryPlayback = 0; void save(); clearSeekHud(); set({ menu: '', bufferAhead: false, undo: undefined }); } else set('controls', true);
     }
     if (event.type !== 'player') return;
     const e = event.value as PlayerEvent; if (!state.id || e.id !== state.id || identityProfile !== profileId()) return;
+    if (pendingRemoteSeek && (Math.abs(e.position - pendingRemoteSeek.position) <= 2000 || performance.now() - pendingRemoteSeek.at > 1500)) {
+      pendingRemoteSeek = undefined;
+      set('seekHudPosition', undefined);
+    }
     const previous = state.event;
     if (state.event && (state.event.duration !== e.duration || e.position < state.event.position || Math.abs(e.position - state.event.position) > Math.max(2000, e.time - state.event.time + 1000))) countdown.reset();
     if (recoveryUsed) {
@@ -170,21 +224,26 @@ export function createPlayback(platform: Platform, repo: Repository, flixtor: Fl
     const eligible = !!next() && !!profile()?.autoplay && safeEnding && (e.ended || !attendance.dueAtCredits(attendance.token));
     if (countdown.tick(performance.now(), eligible, canRun && (e.ended || e.playing))) void advance(true);
     set('countdown', eligible && !countdown.cancelled ? Math.ceil(countdown.remaining / 1000) : undefined);
-    if (e.playing && canRun && !e.ended && performance.now() - interactionAt > 6000) set('controls', false);
+    const controlsCanHide = foreground && !state.menu && !state.bufferAhead && !state.chooser && !attendance.pending && !state.undo && state.preview === undefined;
+    if (controlsCanHide && !e.ended && performance.now() - interactionAt >= 3000) set('controls', false);
   }, 250);
   async function cancel() {
     const id = state.id, progress = save();
+    if (previewTimer) clearTimeout(previewTimer); previewTimer = undefined; pendingRemoteSeek = undefined; clearSeekHud();
     abort.abort(); request++; attendance.reset();
-    set({ id: '', event: undefined, loading: false, error: undefined, menu: '', stillWatching: undefined, undo: undefined });
+    set({ id: '', event: undefined, loading: false, error: undefined, menu: '', preview: undefined, seekHud: false, seekHudPosition: undefined, stillWatching: undefined, undo: undefined });
     await Promise.all([progress, id ? platform.call('player.command', { id, action: 'stop' }) : Promise.resolve()]);
   }
   async function stop(destination?: string) { const work = cancel(), token = request; await work; if (token === request) leave(destination); }
   return {
     state, start, stop, cancel, command, next, save, effectiveAction,
-    interact() { attendance.interact(); interactionAt = performance.now(); set('controls', true); },
-    menu(value: string) { interactionAt = performance.now(); set({ menu: value, controls: true }); void command('captions', { bottom: value ? 0.32 : 0.2, right: value ? 0.38 : 0.05 }); },
-    preview(position?: number) { set('preview', position === undefined ? undefined : Math.max(0, Math.min(state.event?.duration || 0, position))); },
-    async commitSeek() { if (state.preview !== undefined) await command('seek', { position: state.preview }); set('preview', undefined); },
+    seekBy(delta: number) { return seekRemote(delta, false); },
+    seekHidden(delta: number) { return seekRemote(delta, true); },
+    interact() { clearSeekHud(); attendance.interact(); interactionAt = performance.now(); set('controls', true); },
+    hideControls() { interactionAt = performance.now(); set('controls', false); },
+    menu(value: string) { clearSeekHud(); interactionAt = performance.now(); set({ menu: value, controls: true }); void command('captions', { bottom: value ? 0.32 : 0.2, right: value ? 0.38 : 0.05 }); },
+    preview,
+    commitSeek,
     skip(segment: Segment) { skipped.add(segment.id); set('undo', { position: state.event?.position || segment.start, type: segment.typeId, until: performance.now() + 5000 }); return command('seek', { position: segment.end }); },
     undoSkip() { const undo = state.undo; set('undo', undefined); return undo ? command('seek', { position: undo.position }) : Promise.resolve(); },
     cancelNext() { countdown.cancel(); set('countdown', undefined); },
@@ -197,6 +256,6 @@ export function createPlayback(platform: Platform, repo: Repository, flixtor: Fl
       set({ bufferAhead: open, bufferReady: false, bufferStalled: false });
     },
     refreshRegions() { return fetchSegments(request, state.event?.duration || 0); },
-    dispose() { clearInterval(timer); unsubscribe(); abort.abort(); request++; }
+    dispose() { clearInterval(timer); if (previewTimer) clearTimeout(previewTimer); clearSeekHud(); unsubscribe(); abort.abort(); request++; }
   };
 }

@@ -22,7 +22,7 @@ import { BrowseShelves } from './BrowseShelves';
 type HomeShelf = { id: string; label: string; titles: HomeTitle[]; continuing?: boolean };
 const genreIds: Record<string, number> = { Action: 28, Adventure: 12, Animation: 16, Comedy: 35, Crime: 80, Documentary: 99, Drama: 18, Family: 10751, Fantasy: 14, History: 36, Horror: 27, Mystery: 9648, Romance: 10749, 'Sci-Fi': 878, Thriller: 53, War: 10752, Western: 37 };
 const genres = ['Action', 'Adventure', 'Animation', 'Biography', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Mystery', 'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western'];
-const searchPosterLayouts = { small: { columns: 10, gap: 8 }, medium: { columns: 6, gap: 12 }, large: { columns: 4, gap: 16 } } as const;
+const searchPosterLayouts = { small: { columns: 8, gap: 8 }, medium: { columns: 6, gap: 12 }, large: { columns: 4, gap: 16 } } as const;
 type SearchPosterSize = keyof typeof searchPosterLayouts;
 
 
@@ -30,10 +30,10 @@ export function Catalog() {
   const app = useApp(), location = useLocation(), navigate = useNavigate(); const [params, setParams] = useSearchParams();
   const destination = () => location.pathname.slice(1) || 'home', query = () => String(params.q || '').slice(0, 64), sort = () => String(params.sort || 'latest');
   const mode = () => searchMode(params.mode);
-  const filterKey = () => String(params.shelf || '') + String(params.genre || '') + JSON.stringify(catalogueKey(destination(), query(), sort(), app.profileId(), app.authRevision(), mode()));
+  const filterKey = () => String(params.shelf || '') + String(params.genre || '') + JSON.stringify(catalogueKey(destination(), query(), sort(), app.profileId(), app.authRevision(), mode(), app.data.animeBaseUrl));
   function changeSearch(value: string, next: SearchMode = mode(), replace = true) {
     if (value !== query() || next !== mode()) {
-      app.browseOrigins.delete(JSON.stringify(catalogueKey('search', value, sort(), app.profileId(), app.authRevision(), next)));
+      app.browseOrigins.delete(JSON.stringify(catalogueKey('search', value, sort(), app.profileId(), app.authRevision(), next, app.data.animeBaseUrl)));
     }
     setParams({ mode: next === 'media' ? undefined : next, q: value || undefined, page: undefined }, { replace });
   }
@@ -53,7 +53,7 @@ export function Catalog() {
   const genreMovies = createQuery(() => ({ queryKey: ['discovery', 'movie', 'genre', genre()], enabled: destination() === 'home' && !!genre(), queryFn: ({ signal }) => app.cinemeta.catalog('movie', 'top', genre(), signal), staleTime: CINEMETA_TTL, retry: false }));
   const genreSeries = createQuery(() => ({ queryKey: ['discovery', 'series', 'genre', genre()], enabled: destination() === 'home' && !!genre(), queryFn: ({ signal }) => app.cinemeta.catalog('series', 'top', genre(), signal), staleTime: CINEMETA_TTL, retry: false }));
   const remote = createInfiniteQuery(() => ({
-    queryKey: catalogueKey(destination(), query(), sort(), app.profileId(), app.authRevision(), mode()),
+    queryKey: catalogueKey(destination(), query(), sort(), app.profileId(), app.authRevision(), mode(), app.data.animeBaseUrl),
     initialPageParam: 1, maxPages: 8,
     enabled: destination() === 'search' && ['media', 'anime'].includes(mode()) && !!query().trim(),
     queryFn: ({ pageParam, signal }) => mode() === 'anime' ? app.anime.browse(query(), pageParam, signal) : app.flixtor.search(query(), pageParam, signal),
@@ -93,7 +93,7 @@ export function Catalog() {
   onCleanup(() => availabilityRequest?.abort());
   const hero = () => highlighted() || shelves()[0]?.titles[0];
   const playableHero = () => { const value = hero(); return value && !isDiscovery(value) ? value : undefined; };
-  const heroDetail = createQuery(() => ({ queryKey: ['detail', playableHero() ? titleKey(playableHero()!) : '', app.profileId(), app.authRevision()],
+  const heroDetail = createQuery(() => ({ queryKey: ['detail', playableHero() ? titleKey(playableHero()!) : '', app.profileId(), app.authRevision(), ...(playableHero()?.source === 'HIANIME' ? [app.data.animeBaseUrl] : [])],
     enabled: destination() === 'home' && !!playableHero(), queryFn: ({ signal }) => playableHero()!.source === 'HIANIME' ? app.anime.detail(playableHero()!, signal) : app.flixtor.detail(playableHero()!, signal), retry: false }));
   createEffect(() => {
     if (destination() === 'search') return;
@@ -266,7 +266,7 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
     backdropTimer = setTimeout(() => app.setStage(title), 500);
   };
   const preview = createQuery(() => ({
-    queryKey: ['detail', previewTitle() ? titleKey(previewTitle()!) : '', app.profileId(), app.authRevision()],
+    queryKey: ['detail', previewTitle() ? titleKey(previewTitle()!) : '', app.profileId(), app.authRevision(), ...(previewTitle()?.source === 'HIANIME' ? [app.data.animeBaseUrl] : [])],
     enabled: !!previewTitle() && !previewTitle()!.synopsis,
     retry: false,
     queryFn: ({ signal }) => previewTitle()!.source === 'HIANIME'
@@ -310,23 +310,30 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
   window.addEventListener('keydown', keydown, true);
   onCleanup(() => { clearTimeout(timer); window.removeEventListener('keydown', keydown, true); });
   return <Column width={1728} height={848} gap={24} scroll="none">
-    <Row width={1728} height={82} gap={24} onUp={() => restoreFocus('nav-search')}>
-      <text skipFocus width={580} height={76} fontSize={54} lineHeight={64} fontFamily="Roboto700" maxLines={1}>Find your next story.</text>
-      <Button id="search-mode-media" label="Movies & TV" width={220} selected={props.mode === 'media'} action={() => switchMode('media')} />
-      <Button id="search-mode-anime" label="Anime" width={140} selected={props.mode === 'anime'} action={() => switchMode('anime')} />
-      <Button id="search-mode-people" label="People" width={160} selected={props.mode === 'people'} action={() => switchMode('people')} />
-      <Button id="search-mode-studios" label="Studios" width={160} selected={props.mode === 'studios'} action={() => switchMode('studios')} />
-    </Row>
-    <view width={1728} height={742} clipping={[0, 20, 20, 20]} forwardFocus={0}>
-      <Row width={1728} height={742} gap={32}>
-        <Column width={400} height={742} gap={20} scroll="none">
-          <TextField id="search-field" label={label()} value={draft()} change={change} width={400} maxLength={64} autofocus={!props.restore}
-            activate={focusField} handle={handle => field = handle} up={() => restoreFocus(`search-mode-${props.mode}`)}
-            down={() => restoreFocus('search-poster-size')} right={rightToResults} submit={() => submit()} />
-          <Row width={400} height={64} gap={8}>
-            <text skipFocus width={96} height={64} fontSize={22} color={palette.muted}>Poster size</text>
-            <Button id="search-poster-size" label={`Poster size: ${posterSize()}`} icon={`grid-${posterSize()}`} iconOnly width={64} height={60} selected action={cyclePosterSize} />
-          </Row>
+    <view width={1728} height={114}>
+      <Row x={488} y={24} width={752} height={90} gap={24} onUp={() => restoreFocus('nav-search')}>
+        <Button id="search-mode-media" label="Movies & TV" width={220} selected={props.mode === 'media'} action={() => switchMode('media')} />
+        <Button id="search-mode-anime" label="Anime" width={140} selected={props.mode === 'anime'} action={() => switchMode('anime')} />
+        <Button id="search-mode-people" label="People" width={160} selected={props.mode === 'people'} action={() => switchMode('people')} />
+        <Button id="search-mode-studios" label="Studios" width={160} selected={props.mode === 'studios'} action={() => switchMode('studios')} />
+      </Row>
+    </view>
+    <view width={1728} height={710} clipping={[0, 20, 20, 20]} forwardFocus={0}>
+      <Row width={1728} height={710} gap={32}>
+        <Column width={400} height={710} gap={20} scroll="none">
+          <view width={400} height={88}>
+            <view y={12} width={400} height={76}>
+              <TextField id="search-field" label={label()} placeholder="Search" value={draft()} change={change} width={400} maxLength={64} autofocus={!props.restore}
+                activate={focusField} handle={handle => field = handle} up={() => restoreFocus(`search-mode-${props.mode}`)}
+                down={() => restoreFocus('search-poster-size')} right={rightToResults} submit={() => submit()} />
+            </view>
+          </view>
+          <Show when={app.host.voice}>
+            <Button id="search-voice" label="Voice search" icon="microphone" width={400} height={64} action={() => app.run(async () => {
+              const text = await app.platform.call<string | null>('voice.search');
+              if (text) { const value = text.trim().slice(0, 64); setDraft(value); submit(value); field?.focus(); }
+            })} />
+          </Show>
           <Show when={!props.query}><Status width={400} message="Use your remote or type a title." /></Show>
           <Show when={selected()} keyed>{title => <view width={400} height={510} color={palette.panelSolid} borderRadius={20}>
             <Column x={20} y={20} width={360} height={470} gap={14} scroll="none">
@@ -337,12 +344,16 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
             </Column>
           </view>}</Show>
         </Column>
-        <Column width={1296} height={742} gap={16} scroll="none" onLeft={() => restoreFocus('search-field')}>
+        <Column width={1296} height={710} gap={12} scroll="none" onLeft={() => restoreFocus('search-field')}>
+          <Row width={1296} height={64} gap={12}>
+            <view skipFocus width={1156} height={64} />
+            <Button id="search-poster-size" label={`Poster size: ${posterSize()}`} icon={`grid-${posterSize()}`} iconOnly iconSize={40} width={128} height={64} selected action={cyclePosterSize} />
+          </Row>
           <Show when={props.pending}><Status width={1296} message="Searching…" /></Show>
           <Show when={['media', 'anime'].includes(props.mode) && props.query && !props.pending && !props.error && !props.titles.length}><Status width={1296} message={`No results for “${props.query}”. Try a different title.`} /></Show>
           <Show when={props.mode === 'people' || props.mode === 'studios' ? props.prefix : undefined} keyed>{prefix => <EntityResults kind={props.mode as 'people' | 'studios'} query={props.query} prefix={prefix} width={1296} firstFocus={setFirstEntityFocus} />}</Show>
           <Show when={props.prefix} keyed>{prefix => <Show when={posterSize()} keyed>{size => <Show when={props.titles.length}>
-            <TitleGrid titles={props.titles} prefix={prefix} columns={searchPosterLayouts[size].columns} rowGap={searchPosterLayouts[size].gap} width={1296} height={742} initial={gridInitial(prefix)} autofocus={props.restore} compact focus={(title, index) => { setGridFocus({ prefix, index }); selectTitle(title); props.focus(title, index); }} open={props.open} end={props.end} />
+            <TitleGrid titles={props.titles} prefix={prefix} columns={searchPosterLayouts[size].columns} rowGap={searchPosterLayouts[size].gap} width={1296} height={634} initial={gridInitial(prefix)} autofocus={props.restore} compact focus={(title, index) => { setGridFocus({ prefix, index }); selectTitle(title); props.focus(title, index); }} open={props.open} end={props.end} />
           </Show>}</Show>}</Show>
         </Column>
       </Row>

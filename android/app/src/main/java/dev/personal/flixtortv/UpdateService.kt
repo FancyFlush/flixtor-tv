@@ -26,6 +26,9 @@ import org.json.JSONObject
 enum class UpdatePhase { IDLE, CHECKING, CURRENT, DOWNLOADING, READY, FAILED, INSTALLING, INCOMPATIBLE, SIGNER_MISMATCH }
 internal class UpdateSignerException : IllegalStateException("Release signing certificate differs from installed app")
 enum class ReportPhase { IDLE, SENDING, SENT, FAILED, UNCONFIGURED }
+internal fun validReleaseApkUrl(url: String) =
+    url.startsWith("https://github.com/FancyFlush/flixtor-tv/releases/download/") &&
+        (url.endsWith("/flixtor.apk") || url.endsWith("/app-release.apk"))
 data class UpdateState(val phase: UpdatePhase = UpdatePhase.IDLE, val version: String = "", val progress: Int = 0,
     val incidentKnown: Boolean = false, val incidentChecked: Boolean = false, val report: ReportPhase = ReportPhase.IDLE,
     val installationFailed: Boolean = false, val incidentFingerprint: String? = null)
@@ -36,7 +39,7 @@ data class ReleaseInfo(val versionCode: Int, val versionName: String, val minSdk
                 json.getString("sha256"), json.getString("apkUrl"))
             require(release.versionCode > 0 && release.versionName.length in 1..64 && release.minSdk >= 29)
             require(release.sha256.matches(Regex("[a-f0-9]{64}")))
-            require(release.url.startsWith("https://github.com/FancyFlush/flixtor-tv/releases/download/"))
+            require(validReleaseApkUrl(release.url))
             return release
         }
     }

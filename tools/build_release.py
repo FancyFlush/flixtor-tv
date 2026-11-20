@@ -2,7 +2,9 @@
 import json
 import os
 from pathlib import Path
+import re
 import secrets
+import shutil
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
@@ -44,8 +46,27 @@ if not Path(values["TV_KEYSTORE"]).exists():
                     "-dname", "CN=Personal TV, OU=Personal, O=Personal, C=IE"], env=env, check=True)
     os.chmod(values["TV_KEYSTORE"], 0o600)
 subprocess.run([str(root / "android/gradlew"), ":app:assembleRelease", "--console=plain"], cwd=root / "android", env=env, check=True)
-apk = root / "android/app/build/outputs/apk/release/app-release.apk"
+release_dir = root / "android/app/build/outputs/apk/release"
+apk = release_dir / "flixtor.apk"
+shutil.copy2(release_dir / "app-release.apk", apk)
 import hashlib
-apk.with_suffix(".apk.sha256").write_text(hashlib.sha256(apk.read_bytes()).hexdigest() + "  app-release.apk\n")
-print("Signed APK: android/app/build/outputs/apk/release/app-release.apk")
+apk.with_suffix(".apk.sha256").write_text(hashlib.sha256(apk.read_bytes()).hexdigest() + "  flixtor.apk\n")
+release_tag = env.get("TV_RELEASE_TAG")
+if release_tag:
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", release_tag):
+        raise ValueError("TV_RELEASE_TAG must be a simple Git tag")
+    apk_name = env.get("TV_RELEASE_APK_NAME", "flixtor.apk")
+    if apk_name not in {"flixtor.apk", "app-release.apk"}:
+        raise ValueError("TV_RELEASE_APK_NAME must be flixtor.apk or app-release.apk")
+    release_apk = release_dir / apk_name
+    metadata = {
+        "versionCode": int(env.get("TV_VERSION_CODE", "1002")),
+        "versionName": env.get("TV_VERSION_NAME", "1.0.2"),
+        "minSdk": 29,
+        "sha256": hashlib.sha256(release_apk.read_bytes()).hexdigest(),
+        "commit": env.get("TV_COMMIT_SHA", "local"),
+        "apkUrl": f"https://github.com/FancyFlush/flixtor-tv/releases/download/{release_tag}/{apk_name}",
+    }
+    (release_dir / "release.json").write_text(json.dumps(metadata, indent=2) + "\n")
+print("Signed APK: android/app/build/outputs/apk/release/flixtor.apk")
 print("Signing material: ~/.local/share/flixtor-tv/ — back up securely for future updates.")

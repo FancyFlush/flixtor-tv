@@ -15,7 +15,7 @@ class AnimeTest {
     private val episode = Episode(1, 1, "Start", "22676", "1", 0)
     private val card = """<div class="film_list-wrap"><div class="flw-item">
         <img class="film-poster-img" src="https://images.example/poster.webp">
-        <h3 class="film-name"><a href="https://hianime.at/naruto-1335" title="Naruto">Naruto</a></h3>
+        <h3 class="film-name"><a href="https://hianime.fm/naruto-1335" title="Naruto">Naruto</a></h3>
         <span class="fdi-item">TV</span></div></div>"""
     private fun fragment(html: String) = JSONObject().put("status", true).put("html", html).toString()
     private fun servers(vararg modes: String) = fragment(modes.joinToString("") { mode ->
@@ -36,7 +36,7 @@ class AnimeTest {
         assertFalse(AnimeParser.cards(card.replace(">TV<", ">Movie<")).single().isSeries)
         assertTrue(AnimeParser.cards("<div class=film_list-wrap></div>").isEmpty())
         assertEquals(1, AnimeParser.cards(card + "<div id=main-sidebar>$card</div>").size)
-        try { AnimeParser.cards(card.replace("https://hianime.at/naruto-1335", "https://evil.example/naruto-1335")); fail() }
+        try { AnimeParser.cards(card.replace("https://hianime.fm/naruto-1335", "https://evil.example/naruto-1335")); fail() }
         catch (e: SiteException) { assertEquals(Failure.CHANGED, e.failure) }
         try { AnimeParser.cards("<title>Just a moment</title><div class=film_list-wrap></div>"); fail() }
         catch (e: SiteException) { assertEquals(Failure.ACCESS, e.failure) }
