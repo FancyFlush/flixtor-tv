@@ -90,6 +90,49 @@ test('anime search cancels obsolete results and handles empty, error, retry, and
   await expect(page.getByRole('button', { name: 'Anime fixture 1', exact: true })).toHaveCount(0);
 });
 
+test('search poster sizes control grid density and persist the selection', async ({ page }) => {
+  await setup(page, { '/search/layout?ajax=1&page=1': { body: cards('Sized', 1, 30) } });
+  await activate(page, 'Search');
+  const field = page.getByRole('textbox', { name: 'Search films and TV shows', exact: true });
+  await field.fill('layout');
+  const title = page.getByRole('button', { name: 'Sized 1', exact: true });
+  await expect(title).toBeAttached();
+  const cycleSize = async () => {
+    await page.getByRole('button', { name: /^Poster size:/ }).focus();
+    await page.keyboard.press('Enter');
+  };
+  const width = async () => (await title.boundingBox())!.width;
+  const savedSize = () => page.evaluate(() => JSON.parse(localStorage.getItem('flixtor-fixture:app')!).searchPosterSize);
+  const positions = () => page.getByRole('button', { name: /^Sized \d+$/, exact: true })
+    .evaluateAll(buttons => buttons.map(button => ({ x: button.getBoundingClientRect().x, y: button.getBoundingClientRect().y })));
+  const rows = async () => new Set((await positions()).map(point => Math.round(point.y / 10))).size;
+  const firstRowCount = async () => {
+    const points = await positions(), firstY = Math.min(...points.map(point => point.y));
+    return points.filter(point => Math.abs(point.y - firstY) < 2).length;
+  };
+
+  await cycleSize();
+  await cycleSize();
+  await expect.poll(savedSize).toBe('small');
+  await expect(page.getByRole('button', { name: 'Poster size: small', exact: true })).toBeAttached();
+  const smallWidth = await width();
+  expect(await firstRowCount()).toBe(10);
+  expect(await rows()).toBeGreaterThanOrEqual(3);
+  await cycleSize();
+  await expect.poll(savedSize).toBe('medium');
+  await expect(page.getByRole('button', { name: 'Poster size: medium', exact: true })).toBeAttached();
+  const mediumWidth = await width();
+  expect(await firstRowCount()).toBe(6);
+  expect(mediumWidth).toBeGreaterThan(smallWidth);
+  expect(await rows()).toBeGreaterThanOrEqual(2);
+  await cycleSize();
+  await expect.poll(savedSize).toBe('large');
+  await expect(page.getByRole('button', { name: 'Poster size: large', exact: true })).toBeAttached();
+  expect(await firstRowCount()).toBe(4);
+  expect(await width()).toBeGreaterThan(mediumWidth);
+  expect(await rows()).toBeGreaterThanOrEqual(2);
+});
+
 for (const height of [1080, 720]) {
   test(`search preview and compact grid scroll at ${height}p`, async ({ page }, info) => {
     await page.setViewportSize({ width: height * 16 / 9, height });

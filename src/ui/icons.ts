@@ -1,5 +1,5 @@
 // Lucide SVG paths from lucide-static@1.61.0, ISC license.
-export type IconName = 'microphone' | 'play' | 'pause' | 'back' | 'search' | 'settings' | 'plus' | 'check' | 'lock' | 'person' | 'episodes' | 'rewind' | 'forward' | 'close' | 'chevron' | 'delete' | 'home' | 'film' | 'tv' | 'anime' | 'list' | 'library' | 'favorite';
+export type IconName = 'microphone' | 'play' | 'pause' | 'back' | 'search' | 'settings' | 'plus' | 'check' | 'lock' | 'person' | 'episodes' | 'rewind' | 'forward' | 'close' | 'chevron' | 'delete' | 'home' | 'film' | 'tv' | 'anime' | 'list' | 'library' | 'favorite' | 'grid-small' | 'grid-medium' | 'grid-large';
 const paths: Record<IconName, string> = {
   microphone: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/>',
   play: "<path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z\" />",
@@ -24,6 +24,9 @@ const paths: Record<IconName, string> = {
   list: "<path d=\"M12 7v6\" /> <path d=\"M15 10H9\" /> <path d=\"M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z\" />",
   library: "<rect width=\"8\" height=\"18\" x=\"3\" y=\"3\" rx=\"1\" /> <path d=\"M7 3v18\" /> <path d=\"M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z\" />",
   favorite: "<path d=\"M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5\" />",
+  'grid-small': '<rect x="2" y="2" width="4" height="5" rx="1"/><rect x="7.5" y="2" width="4" height="5" rx="1"/><rect x="13" y="2" width="4" height="5" rx="1"/><rect x="18.5" y="2" width="4" height="5" rx="1"/><rect x="2" y="9.5" width="4" height="5" rx="1"/><rect x="7.5" y="9.5" width="4" height="5" rx="1"/><rect x="13" y="9.5" width="4" height="5" rx="1"/><rect x="18.5" y="9.5" width="4" height="5" rx="1"/><rect x="2" y="17" width="4" height="5" rx="1"/><rect x="7.5" y="17" width="4" height="5" rx="1"/><rect x="13" y="17" width="4" height="5" rx="1"/><rect x="18.5" y="17" width="4" height="5" rx="1"/>',
+  'grid-medium': '<rect x="2" y="3" width="6" height="7" rx="1"/><rect x="9" y="3" width="6" height="7" rx="1"/><rect x="16" y="3" width="6" height="7" rx="1"/><rect x="2" y="14" width="6" height="7" rx="1"/><rect x="9" y="14" width="6" height="7" rx="1"/><rect x="16" y="14" width="6" height="7" rx="1"/>',
+  'grid-large': '<rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="8" height="8" rx="1"/>',
 };
 export function svgUrl(body: string, color = '#f5f8ff', viewBox = '0 0 24 24') {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="' + viewBox + '" fill="none" stroke="' + color + '" color="' + color + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';

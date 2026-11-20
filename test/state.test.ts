@@ -14,6 +14,17 @@ describe('durable state', () => {
     expect(data.libraries.a.favorites).toHaveLength(1); expect(data.libraries.b.favorites).toEqual([]); expect(data.profiles[0].locked).toBe(true); expect(JSON.stringify(data)).not.toContain('"pin"');
   });
   it('does not mark migration complete on failed persistence', async () => { const { platform, values } = storage(true); await expect(new Repository(platform).initialize()).rejects.toThrow('disk full'); expect(values.has('app')).toBe(false); });
+  it('defaults legacy search poster size and persists changes', async () => {
+    const { platform, values } = storage(); const repo = new Repository(platform); await repo.initialize();
+    expect(repo.current.searchPosterSize).toBe('medium');
+    const legacy = JSON.parse(values.get('app')!) as Record<string, unknown>; delete legacy.searchPosterSize;
+    values.set('app', JSON.stringify(legacy));
+    const reopened = new Repository(platform); await reopened.initialize();
+    expect(reopened.current.searchPosterSize).toBe('medium');
+    await reopened.change(data => { data.searchPosterSize = 'large'; });
+    const restored = new Repository(platform); await restored.initialize();
+    expect(restored.current.searchPosterSize).toBe('large');
+  });
   it('serializes concurrent writes and survives reopen', async () => {
     const { platform } = storage(); const repo = new Repository(platform); await repo.initialize();
     await Promise.all([repo.saveProfile(undefined, 'Alice', 1), repo.saveProfile(undefined, 'Bob', 2)]);

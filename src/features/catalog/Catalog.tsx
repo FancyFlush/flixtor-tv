@@ -22,6 +22,8 @@ import { BrowseShelves } from './BrowseShelves';
 type HomeShelf = { id: string; label: string; titles: HomeTitle[]; continuing?: boolean };
 const genreIds: Record<string, number> = { Action: 28, Adventure: 12, Animation: 16, Comedy: 35, Crime: 80, Documentary: 99, Drama: 18, Family: 10751, Fantasy: 14, History: 36, Horror: 27, Mystery: 9648, Romance: 10749, 'Sci-Fi': 878, Thriller: 53, War: 10752, Western: 37 };
 const genres = ['Action', 'Adventure', 'Animation', 'Biography', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Mystery', 'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western'];
+const searchPosterLayouts = { small: { columns: 10, gap: 8 }, medium: { columns: 6, gap: 12 }, large: { columns: 4, gap: 16 } } as const;
+type SearchPosterSize = keyof typeof searchPosterLayouts;
 
 
 export function Catalog() {
@@ -243,6 +245,17 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
   const app = useApp(); const [draft, setDraft] = createSignal(props.query);
   const [firstEntityFocus, setFirstEntityFocus] = createSignal('');
   const [selected, setSelected] = createSignal<Title>(), [previewTitle, setPreviewTitle] = createSignal<Title>();
+  const [gridFocus, setGridFocus] = createSignal<{ prefix: string; index: number }>();
+  const posterSize = () => app.data.searchPosterSize;
+  const gridInitial = (prefix: string) => {
+    const saved = gridFocus();
+    return saved?.prefix === prefix ? saved.index : props.initial;
+  };
+  const setPosterSize = (size: SearchPosterSize) => app.run(() => app.repo.change(data => { data.searchPosterSize = size; }));
+  const cyclePosterSize = () => {
+    const sizes = Object.keys(searchPosterLayouts) as SearchPosterSize[];
+    setPosterSize(sizes[(sizes.indexOf(posterSize()) + 1) % sizes.length]);
+  };
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let backdropTimer: ReturnType<typeof setTimeout> | undefined;
   const selectTitle = (title: Title) => {
@@ -308,7 +321,12 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
       <Row width={1728} height={742} gap={32}>
         <Column width={400} height={742} gap={20} scroll="none">
           <TextField id="search-field" label={label()} value={draft()} change={change} width={400} maxLength={64} autofocus={!props.restore}
-            activate={focusField} handle={handle => field = handle} up={() => restoreFocus(`search-mode-${props.mode}`)} right={rightToResults} submit={() => submit()} />
+            activate={focusField} handle={handle => field = handle} up={() => restoreFocus(`search-mode-${props.mode}`)}
+            down={() => restoreFocus('search-poster-size')} right={rightToResults} submit={() => submit()} />
+          <Row width={400} height={64} gap={8}>
+            <text skipFocus width={96} height={64} fontSize={22} color={palette.muted}>Poster size</text>
+            <Button id="search-poster-size" label={`Poster size: ${posterSize()}`} icon={`grid-${posterSize()}`} iconOnly width={64} height={60} selected action={cyclePosterSize} />
+          </Row>
           <Show when={!props.query}><Status width={400} message="Use your remote or type a title." /></Show>
           <Show when={selected()} keyed>{title => <view width={400} height={510} color={palette.panelSolid} borderRadius={20}>
             <Column x={20} y={20} width={360} height={470} gap={14} scroll="none">
@@ -323,7 +341,9 @@ function SearchResults(props: { mode: SearchMode; switchMode(mode: SearchMode, q
           <Show when={props.pending}><Status width={1296} message="Searching…" /></Show>
           <Show when={['media', 'anime'].includes(props.mode) && props.query && !props.pending && !props.error && !props.titles.length}><Status width={1296} message={`No results for “${props.query}”. Try a different title.`} /></Show>
           <Show when={props.mode === 'people' || props.mode === 'studios' ? props.prefix : undefined} keyed>{prefix => <EntityResults kind={props.mode as 'people' | 'studios'} query={props.query} prefix={prefix} width={1296} firstFocus={setFirstEntityFocus} />}</Show>
-          <Show when={props.prefix} keyed>{prefix => <Show when={props.titles.length}><TitleGrid titles={props.titles} prefix={prefix} columns={6} width={1296} height={722} initial={props.initial} autofocus={props.restore} compact focus={(title, index) => { selectTitle(title); props.focus(title, index); }} open={props.open} end={props.end} /></Show>}</Show>
+          <Show when={props.prefix} keyed>{prefix => <Show when={posterSize()} keyed>{size => <Show when={props.titles.length}>
+            <TitleGrid titles={props.titles} prefix={prefix} columns={searchPosterLayouts[size].columns} rowGap={searchPosterLayouts[size].gap} width={1296} height={742} initial={gridInitial(prefix)} autofocus={props.restore} compact focus={(title, index) => { setGridFocus({ prefix, index }); selectTitle(title); props.focus(title, index); }} open={props.open} end={props.end} />
+          </Show>}</Show>}</Show>
         </Column>
       </Row>
     </view>

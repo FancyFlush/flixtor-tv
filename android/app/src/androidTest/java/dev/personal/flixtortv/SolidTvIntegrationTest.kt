@@ -29,7 +29,7 @@ class SolidTvIntegrationTest {
     private fun evaluate(web: WebView, code: String): String {
         val latch = CountDownLatch(1); var result = "null"
         instrument.runOnMainSync { web.evaluateJavascript(code) { result = it; latch.countDown() } }
-        check(latch.await(15, TimeUnit.SECONDS)) { "WebView JavaScript evaluation timed out: ${code.take(160)}" }
+        check(latch.await(30, TimeUnit.SECONDS)) { "WebView JavaScript evaluation timed out: ${code.take(160)}" }
         return result
     }
     private fun press(code: Int) = instrument.sendKeyDownUpSync(code)

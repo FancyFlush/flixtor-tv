@@ -1,7 +1,7 @@
 import type { Platform } from '../platform/platform';
 import { playbackKey, titleKey, validSegment, type Profile, type Segment, type Title, type Viewing } from './models';
 export interface Library { favorites: Title[]; viewing: Viewing[] }
-export interface AppData { schema: 1; profiles: Profile[]; libraries: Record<string, Library>; skip: Record<string, string>; fit: { horizontal: number; vertical: number } }
+export interface AppData { schema: 1; profiles: Profile[]; libraries: Record<string, Library>; skip: Record<string, string>; fit: { horizontal: number; vertical: number }; searchPosterSize: 'small' | 'medium' | 'large' }
 const defaultProfile = (): Profile => ({ id: 'default', name: 'My profile', avatar: 0, quality: 0, autoplay: true, largerBuffer: false, locked: false });
 function parse<T>(raw: unknown, fallback: T): T { try { return typeof raw === 'string' ? JSON.parse(raw) : fallback; } catch { return fallback; } }
 export function importLegacy(legacy: Record<string, unknown>): AppData {
@@ -15,7 +15,7 @@ export function importLegacy(legacy: Record<string, unknown>): AppData {
       viewing: (value?.viewing ?? (p.id === 'default' ? parse<Viewing[]>(original?.viewing, []) : [])).slice(0, 100) };
   }
   const fit = legacy.screen_fit as { horizontal?: number; vertical?: number } | undefined;
-  return { schema: 1, profiles, libraries, skip: (legacy.skip || {}) as Record<string, string>, fit: { horizontal: Math.min(10, Math.max(0, fit?.horizontal ?? 5)), vertical: Math.min(10, Math.max(0, fit?.vertical ?? 5)) } };
+  return { schema: 1, profiles, libraries, skip: (legacy.skip || {}) as Record<string, string>, fit: { horizontal: Math.min(10, Math.max(0, fit?.horizontal ?? 5)), vertical: Math.min(10, Math.max(0, fit?.vertical ?? 5)) }, searchPosterSize: 'medium' };
 }
 export class Repository {
   private data!: AppData; private queue: Promise<void> = Promise.resolve();
@@ -27,6 +27,7 @@ export class Repository {
     if (raw) {
       const value = JSON.parse(raw) as AppData;
       if (value.schema !== 1 || !Array.isArray(value.profiles) || !value.profiles.length || !value.libraries || !value.skip) throw new Error('Stored data needs recovery. Original data retained.');
+      if (!['small', 'medium', 'large'].includes(value.searchPosterSize)) value.searchPosterSize = 'medium';
       this.data = value;
     } else {
       const legacy = await this.platform.call<Record<string, unknown>>('legacy');
